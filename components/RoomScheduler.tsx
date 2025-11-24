@@ -7,7 +7,15 @@ import { Calendar, Clock, CheckCircle2, Users as UsersIcon, Loader2, AlertCircle
 
 export const RoomScheduler: React.FC = () => {
   const { user } = useAuth();
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  
+  // FIX: Inicializa a data com o horário local para evitar UTC offset incorreto na carga inicial
+  const getLocalDate = () => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().split('T')[0];
+  };
+
+  const [selectedDate, setSelectedDate] = useState<string>(getLocalDate());
   const [rooms, setRooms] = useState<Room[]>([]); 
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   
@@ -16,7 +24,7 @@ export const RoomScheduler: React.FC = () => {
   
   // Data State
   const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
-  const [bookingsMap, setBookingsMap] = useState<Record<string, any>>({}); // Map time -> booking details
+  const [bookingsMap, setBookingsMap] = useState<Record<string, any>>({}); 
   const [blockedSlots, setBlockedSlots] = useState<string[]>([]);
   
   const [loading, setLoading] = useState(false);
@@ -33,8 +41,8 @@ export const RoomScheduler: React.FC = () => {
   
   // Modals
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [showDetailModal, setShowDetailModal] = useState(false); // Admin Detail Modal
-  const [selectedBookingDetail, setSelectedBookingDetail] = useState<any>(null); // Booking info for Admin
+  const [showDetailModal, setShowDetailModal] = useState(false); 
+  const [selectedBookingDetail, setSelectedBookingDetail] = useState<any>(null); 
 
   const isAdmin = user?.role === UserRole.ADMIN;
 
@@ -78,7 +86,7 @@ export const RoomScheduler: React.FC = () => {
     setSelectedSlots([]);
     
     try {
-      // Fetch Occupied Slots with Details
+      // Fetch Occupied Slots
       const { data: bookings } = await supabase
         .from('room_bookings')
         .select(`
@@ -94,13 +102,18 @@ export const RoomScheduler: React.FC = () => {
         .eq('date', selectedDate);
 
       if (bookings) {
-        const occupied = bookings.map((b: any) => b.start_time || b.time_slot);
+        // Normaliza o horário (start_time ou time_slot)
+        const occupied = bookings.map((b: any) => {
+          // Garante formato HH:MM
+          const rawTime = b.start_time || b.time_slot;
+          return rawTime.substring(0, 5);
+        });
         setOccupiedSlots(occupied);
         
-        // Map for Admin Details
+        // Map para Admin Details
         const bMap: Record<string, any> = {};
         bookings.forEach((b: any) => {
-          const time = b.start_time || b.time_slot;
+          const time = (b.start_time || b.time_slot).substring(0, 5);
           bMap[time] = b;
         });
         setBookingsMap(bMap);
@@ -120,7 +133,7 @@ export const RoomScheduler: React.FC = () => {
           if (!block.start_time) {
             blockedTimes = [...TIME_SLOTS];
           } else {
-             blockedTimes.push(block.start_time);
+             blockedTimes.push(block.start_time.substring(0, 5));
           }
         });
       }
@@ -140,18 +153,20 @@ export const RoomScheduler: React.FC = () => {
     if (isBlocked) return;
 
     if (isOccupied) {
-      // Se for Admin, abre modal de detalhes para possível cancelamento
+      // Se for Admin, abre modal de detalhes
       if (isAdmin) {
         const booking = bookingsMap[time];
         if (booking) {
           setSelectedBookingDetail(booking);
           setShowDetailModal(true);
+        } else {
+          alert("Detalhes da reserva não encontrados.");
         }
       }
       return;
     }
 
-    // Toggle Selection for booking
+    // Toggle Selection
     if (selectedSlots.includes(time)) {
       setSelectedSlots(selectedSlots.filter(t => t !== time));
     } else {
@@ -234,10 +249,14 @@ export const RoomScheduler: React.FC = () => {
     return `${endHour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
   };
 
-  // Safe Date Display (Fix timezone offset by appending time)
-  const displayDate = selectedDate 
-    ? new Date(selectedDate + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }) 
-    : '';
+  // FIX: Função segura para formatar data sem conversão de fuso horário
+  const formatDisplayDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const [year, month, day] = dateStr.split('-');
+    return `${day}/${month}/${year}`;
+  };
+
+  const displayDate = formatDisplayDate(selectedDate);
 
   return (
     <div className="space-y-6 animate-fade-in relative">
@@ -252,8 +271,7 @@ export const RoomScheduler: React.FC = () => {
             type="date" 
             value={selectedDate} 
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="bg-transparent border-none outline-none text-sm font-medium"
-            min={new Date().toISOString().split('T')[0]}
+            className="bg-transparent border-none outline-none text-sm font-medium uppercase"
           />
         </div>
       </header>
@@ -292,11 +310,6 @@ export const RoomScheduler: React.FC = () => {
               </div>
             </div>
           ))}
-          {rooms.length === 0 && (
-            <div className="col-span-3 text-center p-8 bg-white/50 border border-dashed border-sakura/30 rounded-2xl text-cinza">
-              Nenhuma sala encontrada no sistema. Contate o administrador.
-            </div>
-          )}
         </div>
       )}
 
@@ -304,9 +317,9 @@ export const RoomScheduler: React.FC = () => {
       {selectedRoom ? (
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-sakura/20 animate-slide-up">
           <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
-             <h3 className="text-lg font-medium text-cinza-dark flex items-center gap-2 capitalize">
+             <h3 className="text-lg font-medium text-cinza-dark flex items-center gap-2">
                <Clock className="text-menta" size={20} />
-               {displayDate}
+               Horários Disponíveis ({displayDate})
              </h3>
              <div className="flex items-center gap-4 text-sm flex-wrap">
                 <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-200"></div> Bloqueado</span>
@@ -324,7 +337,7 @@ export const RoomScheduler: React.FC = () => {
                 const isBlocked = blockedSlots.includes(time);
                 const isSelected = selectedSlots.includes(time);
                 
-                // Admin can click occupied slots to see info
+                // Admin pode clicar se estiver ocupado para ver detalhes
                 const canClick = !isBlocked && (!isOccupied || isAdmin); 
                 
                 return (
@@ -332,13 +345,13 @@ export const RoomScheduler: React.FC = () => {
                     key={time}
                     disabled={!canClick}
                     onClick={() => handleSlotClick(time)}
-                    title={isOccupied && isAdmin ? "Clique para ver detalhes (Admin)" : ""}
+                    title={isOccupied && isAdmin ? "Clique para gerenciar esta reserva" : ""}
                     className={`
                       py-2 rounded-lg text-sm font-medium transition-colors relative
                       ${isBlocked
                         ? 'bg-red-50 text-red-300 cursor-not-allowed border border-red-100'
                         : isOccupied 
-                          ? `bg-bege-dark text-cinza-dark border border-transparent ${isAdmin ? 'hover:bg-bege cursor-pointer ring-1 ring-inset ring-sakura/50' : 'cursor-not-allowed'}`
+                          ? `bg-bege-dark text-cinza-dark border border-transparent ${isAdmin ? 'hover:bg-bege cursor-pointer ring-2 ring-transparent hover:ring-sakura' : 'cursor-not-allowed'}`
                           : isSelected 
                             ? 'bg-sakura text-sakura-dark shadow-sm scale-105 border border-sakura' 
                             : 'bg-white border border-bege-dark text-cinza hover:border-menta hover:text-menta-dark'}
@@ -346,7 +359,7 @@ export const RoomScheduler: React.FC = () => {
                   >
                     {time}
                     {isOccupied && isAdmin && (
-                       <div className="absolute top-0 right-0 w-2 h-2 bg-sakura rounded-full -mt-1 -mr-1"></div>
+                       <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-sakura-dark rounded-full"></div>
                     )}
                   </button>
                 );
@@ -450,7 +463,7 @@ export const RoomScheduler: React.FC = () => {
           <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden border border-red-100">
             <div className="bg-red-50 p-4 border-b border-red-100 flex items-center gap-2">
               <Info className="text-red-400" size={20}/>
-              <h3 className="font-bold text-red-900">Detalhes da Reserva (Admin)</h3>
+              <h3 className="font-bold text-red-900">Gerenciar Reserva</h3>
             </div>
             <div className="p-6 space-y-4">
               <div className="space-y-2 text-sm text-cinza-dark">
