@@ -28,12 +28,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('id', userId)
         .single();
 
-      if (error && error.code !== 'PGRST116') {
-         // PGRST116 é o erro de "nenhum resultado encontrado", que tratamos abaixo.
-         // Outros erros logamos.
-         console.error('Erro API Supabase:', error);
-      }
-      
       if (data) {
         setUser({
           id: data.id,
@@ -44,21 +38,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           avatar_url: data.avatar_url
         });
       } else {
-        // FALLBACK IMPORTANTE:
-        // Se o usuário logou no Supabase Auth mas não tem linha na tabela 'profiles',
-        // criamos um objeto de usuário temporário para ele conseguir entrar no app.
-        // Isso evita o Loop Infinito na tela de login.
-        console.warn('Perfil não encontrado no banco. Usando fallback.');
+        // FALLBACK: Se não achar perfil, cria um temporário para não travar o app
+        console.warn('Perfil não encontrado. Usando fallback temporário.');
         setUser({
           id: userId,
           name: email.split('@')[0],
           email: email,
-          role: UserRole.PATIENT, // Assume paciente por segurança
+          role: UserRole.PATIENT,
         });
       }
     } catch (error) {
       console.error('Erro crítico ao buscar perfil:', error);
-      // Mesmo com erro crítico, liberamos o acesso básico
+      // Fallback em caso de erro de rede
       setUser({
         id: userId,
         name: email.split('@')[0],
@@ -69,6 +60,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    let mounted = true;
+
+    // 1. TIMEOUT DE SEGURANÇA:
+    // Se o Supabase não responder em 3 segundos, libera o loading
+    // para o usuário não ficar preso na tela branca.
+    const safetyTimeout = setTimeout(() => {
+      if (mounted && loading) {
+        console.warn('Tempo limite de carregamento excedido. Liberando app.');
+        setLoading(false);
+      }
+    }, 3000);
+
     const initializeAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -81,7 +84,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (error) {
         console.error("Erro na inicialização da Auth:", error);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
+        clearTimeout(safetyTimeout);
       }
     };
 
@@ -90,27 +94,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
         await fetchProfile(session.user.id, session.user.email!);
-        setLoading(false); // Garante que saia do loading
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
-        setLoading(false);
       }
+      if (mounted) setLoading(false);
     });
 
     return () => {
+      mounted = false;
+      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
   }, []);
 
   const signOut = async () => {
-    // LOGOUT OTIMISTA:
-    // Limpa o usuário da tela IMEDIATAMENTE, sem esperar o servidor.
-    // Isso faz o botão funcionar na hora.
+    // LOGOUT OTIMISTA: Limpa a tela antes de chamar o servidor
     setUser(null);
     try {
       await supabase.auth.signOut();
     } catch (error) {
-      console.error('Erro ao deslogar no servidor (ignorado pois usuário já saiu localmente):', error);
+      console.error('Erro no logout (ignorado):', error);
     }
   };
 

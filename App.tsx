@@ -8,9 +8,9 @@ import { ProfessionalManager } from './components/ProfessionalManager';
 import { PatientBooking } from './components/PatientBooking';
 import { Settings } from './components/Settings';
 import { Login } from './components/Login';
-import { FinancialManager } from './components/FinancialManager'; // New
-import { Reports } from './components/Reports'; // New
-import { ScheduleBlocker } from './components/ScheduleBlocker'; // New
+import { FinancialManager } from './components/FinancialManager';
+import { Reports } from './components/Reports';
+import { ScheduleBlocker } from './components/ScheduleBlocker';
 import { UserRole } from './types';
 import { Loader2 } from 'lucide-react';
 
@@ -19,7 +19,7 @@ const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState('dashboard');
 
   useEffect(() => {
-    // Default view based on role
+    // Redirecionamento inteligente baseado no cargo ao logar
     if (user) {
       if (user.role === UserRole.PATIENT) {
         setCurrentView('patient_booking');
@@ -31,8 +31,9 @@ const AppContent: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-bege">
-        <Loader2 className="w-10 h-10 text-sakura animate-spin" />
+      <div className="min-h-screen flex flex-col items-center justify-center bg-bege gap-4">
+        <Loader2 className="w-12 h-12 text-sakura animate-spin" />
+        <p className="text-cinza text-sm animate-pulse">Iniciando sistema...</p>
       </div>
     );
   }
@@ -76,9 +77,9 @@ const AppContent: React.FC = () => {
       />
       
       <main className="flex-1 ml-64 p-8 transition-all">
-        <div className="flex justify-end mb-8">
+        <div className="flex justify-end mb-8 animate-fade-in">
            <div className="flex items-center gap-3">
-              <div className="text-right">
+              <div className="text-right hidden sm:block">
                 <p className="text-sm font-semibold text-cinza-dark">{user.name}</p>
                 <p className="text-xs text-cinza">
                   {user.role === UserRole.ADMIN ? 'Administrador' : 
@@ -88,12 +89,14 @@ const AppContent: React.FC = () => {
               <img 
                 src={user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=FADADD&color=fff`} 
                 alt="Profile" 
-                className="w-10 h-10 rounded-full border-2 border-sakura object-cover"
+                className="w-10 h-10 rounded-full border-2 border-sakura object-cover shadow-sm"
               />
            </div>
         </div>
 
-        {renderContent()}
+        <div className="animate-slide-up">
+          {renderContent()}
+        </div>
       </main>
     </div>
   );
