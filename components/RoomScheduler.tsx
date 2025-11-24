@@ -42,9 +42,10 @@ export const RoomScheduler: React.FC = () => {
     setSelectedSlots([]);
     
     try {
-      const { data: bookings } = await supabase
+      // Tenta buscar usando start_time (novo padrão)
+      const { data: bookings, error } = await supabase
         .from('room_bookings')
-        .select('start_time')
+        .select('start_time') // Se der erro aqui, o banco precisa ser atualizado
         .eq('room_id', selectedRoom)
         .eq('date', selectedDate);
 
@@ -91,6 +92,11 @@ export const RoomScheduler: React.FC = () => {
     setShowConfirmModal(true);
   };
 
+  const handleCloseModal = () => {
+    setShowConfirmModal(false);
+    setSelectedPatientId(''); // Limpa o paciente ao cancelar/fechar
+  };
+
   const confirmBooking = async () => {
     if (!user || !selectedRoom) return;
     setProcessing(true);
@@ -112,11 +118,15 @@ export const RoomScheduler: React.FC = () => {
       if (error) throw error;
 
       alert('Reserva confirmada com sucesso!');
-      setShowConfirmModal(false);
-      setSelectedPatientId('');
+      handleCloseModal();
       fetchSlots(); 
     } catch (error: any) {
-      alert('Erro ao reservar: ' + error.message);
+      console.error(error);
+      if (error.message?.includes('Could not find') || error.message?.includes('column')) {
+        alert('ERRO DE SISTEMA: O Banco de Dados precisa ser atualizado. Faltam as colunas start_time/end_time na tabela room_bookings.');
+      } else {
+        alert('Erro ao reservar: ' + error.message);
+      }
     } finally {
       setProcessing(false);
     }
@@ -281,7 +291,7 @@ export const RoomScheduler: React.FC = () => {
 
               <div className="flex gap-3 mt-6">
                 <button 
-                  onClick={() => setShowConfirmModal(false)}
+                  onClick={handleCloseModal}
                   className="flex-1 py-2 border border-bege-dark text-cinza rounded-xl hover:bg-bege"
                 >
                   Cancelar
