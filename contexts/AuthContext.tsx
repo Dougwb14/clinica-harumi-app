@@ -22,21 +22,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Helper: Busca perfil no banco
   const fetchProfile = async (userId: string, email: string) => {
-    // --- SUPER ADMIN OVERRIDE ---
-    // Isso garante que você nunca fique trancado para fora, mesmo se o banco falhar.
-    if (email === 'douglaswbarbosa@gmail.com') {
-      console.log("Super Admin detectado via hardcode.");
-      return {
-        id: userId,
-        name: 'Douglas Barbosa',
-        email: email,
-        role: UserRole.ADMIN,
-        specialty: 'Administrador Geral',
-        avatar_url: ''
-      };
-    }
-
     try {
+      // Como as políticas RLS estão configuradas, o usuário logado CONSEGUE ler seu perfil.
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -44,8 +31,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single();
 
       if (error) {
-        console.warn("Erro ao buscar perfil (pode ser RLS ou tabela vazia):", error.message);
-        // Se der erro, não retornamos nada aqui para deixar cair no fallback
+        console.warn("Erro ao buscar perfil (verifique RLS):", error.message);
       } else if (data) {
         return {
           id: data.id,
@@ -60,8 +46,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn("Exceção na busca de perfil:", e);
     }
     
-    // Fallback padrão para novos usuários ou erros
-    console.log("Usando perfil fallback de Paciente");
+    // Fallback padrão se não encontrar perfil (evita travamento, mas assume role PATIENT)
     return {
       id: userId,
       name: email.split('@')[0],

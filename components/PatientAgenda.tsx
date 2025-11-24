@@ -33,11 +33,9 @@ export const PatientAgenda: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      // Se for Admin, carrega os dados dos filtros
       if (isAdmin) {
         fetchDropdowns();
       }
-      // Carrega a agenda
       fetchData();
     }
   }, [user, filterProfessional, filterPatient]);
@@ -45,18 +43,13 @@ export const PatientAgenda: React.FC = () => {
   const fetchDropdowns = async () => {
     try {
       // 1. Carregar Profissionais
-      // Nota: As políticas permitem leitura autenticada, então isso funcionará
-      const { data: profs, error: profError } = await supabase
+      const { data: profs } = await supabase
         .from('profiles')
         .select('*')
         .in('role', ['PROFESSIONAL', 'ADMIN']) 
         .order('name');
       
-      if (profError) {
-        console.error('Erro ao buscar profissionais:', profError);
-      } else if (profs) {
-        setProfessionals(profs as any);
-      }
+      if (profs) setProfessionals(profs as any);
 
       // 2. Carregar Pacientes (Unificado)
       const combinedPatients: PatientOption[] = [];

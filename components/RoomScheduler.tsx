@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { TIME_SLOTS } from '../constants';
 import { Patient, Room, AgendaType, UserRole } from '../types';
-import { Calendar, Clock, CheckCircle2, Users as UsersIcon, Loader2, AlertCircle, User as UserIcon, Tag, Trash2, Info } from 'lucide-react';
+import { Calendar, Clock, CheckCircle2, Users as UsersIcon, Loader2, AlertCircle, Tag, Trash2, Info, User as UserIcon } from 'lucide-react';
 
 export const RoomScheduler: React.FC = () => {
   const { user } = useAuth();
