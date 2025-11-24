@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { Appointment, UserRole } from '../types';
-import { Calendar as CalendarIcon, Loader2, XCircle, RefreshCw } from 'lucide-react';
+import { Calendar as CalendarIcon, Loader2, XCircle, RefreshCw, Tag, User } from 'lucide-react';
 
 export const PatientAgenda: React.FC = () => {
   const { user } = useAuth();
@@ -20,7 +20,8 @@ export const PatientAgenda: React.FC = () => {
       let query = supabase.from('appointments').select(`
         *,
         patient:patient_id(name),
-        professional:professional_id(name)
+        professional:professional_id(name),
+        agenda_type:agenda_type_id(name, price, color)
       `).order('date', { ascending: true });
 
       if (user?.role === UserRole.PATIENT) {
@@ -28,6 +29,7 @@ export const PatientAgenda: React.FC = () => {
       } else if (user?.role === UserRole.PROFESSIONAL) {
         query = query.eq('professional_id', user.id);
       }
+      // Admins fetch ALL by default
 
       const { data, error } = await query;
       
@@ -41,7 +43,8 @@ export const PatientAgenda: React.FC = () => {
         patient_id: apt.patient_id,
         professional_id: apt.professional_id,
         patient_name: apt.patient?.name,
-        professional_name: apt.professional?.name
+        professional_name: apt.professional?.name,
+        agenda_type: apt.agenda_type // Map agenda type details
       }));
       
       setAppointments(mapped);
@@ -88,13 +91,14 @@ export const PatientAgenda: React.FC = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[600px]">
+            <table className="w-full text-left min-w-[800px]">
               <thead className="bg-bege/50 border-b border-bege-dark">
                 <tr>
                   <th className="p-4 text-xs font-semibold text-cinza uppercase">Data/Hora</th>
                   <th className="p-4 text-xs font-semibold text-cinza uppercase">
                     {user?.role === UserRole.PATIENT ? 'Profissional' : 'Paciente'}
                   </th>
+                  <th className="p-4 text-xs font-semibold text-cinza uppercase">Serviço</th>
                   <th className="p-4 text-xs font-semibold text-cinza uppercase">Status</th>
                   <th className="p-4 text-xs font-semibold text-cinza uppercase text-right">Ações</th>
                 </tr>
@@ -109,7 +113,21 @@ export const PatientAgenda: React.FC = () => {
                       </div>
                     </td>
                     <td className="p-4 text-cinza-dark">
-                      {user?.role === UserRole.PATIENT ? apt.professional_name : apt.patient_name}
+                      <div className="flex items-center gap-2">
+                         <User size={16} className="text-cinza/60"/>
+                         {user?.role === UserRole.PATIENT ? apt.professional_name : apt.patient_name}
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      {apt.agenda_type ? (
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full" style={{backgroundColor: apt.agenda_type.color}}></span>
+                          <span className="text-sm font-medium text-cinza-dark">{apt.agenda_type.name}</span>
+                          <span className="text-xs text-cinza">(R$ {apt.agenda_type.price})</span>
+                        </div>
+                      ) : (
+                        <span className="text-cinza text-sm">-</span>
+                      )}
                     </td>
                     <td className="p-4">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium border
@@ -122,12 +140,14 @@ export const PatientAgenda: React.FC = () => {
                       </span>
                     </td>
                     <td className="p-4 text-right">
+                      {/* Allow cancellation if Scheduled AND (Is Admin OR Is involved user) */}
                       {apt.status === 'scheduled' && (
                         <button 
                           onClick={() => handleCancel(apt.id)}
                           className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors text-sm flex items-center gap-1 ml-auto"
                         >
-                          <XCircle size={16} /> Cancelar
+                          <XCircle size={16} /> 
+                          {user?.role === UserRole.ADMIN ? 'Cancelar (Admin)' : 'Cancelar'}
                         </button>
                       )}
                     </td>
@@ -135,7 +155,7 @@ export const PatientAgenda: React.FC = () => {
                 ))}
                 {appointments.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="p-12 text-center text-cinza">Nenhum agendamento encontrado.</td>
+                    <td colSpan={5} className="p-12 text-center text-cinza">Nenhum agendamento encontrado.</td>
                   </tr>
                 )}
               </tbody>

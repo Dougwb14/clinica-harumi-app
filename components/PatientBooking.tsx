@@ -1,24 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
-import { User, UserRole } from '../types';
-import { Calendar, Clock, CheckCircle2, User as UserIcon, Loader2 } from 'lucide-react';
+import { User, UserRole, AgendaType } from '../types';
+import { Calendar, Clock, CheckCircle2, User as UserIcon, Loader2, Tag, DollarSign } from 'lucide-react';
 import { TIME_SLOTS } from '../constants';
 
 export const PatientBooking: React.FC = () => {
   const { user } = useAuth();
   const [professionals, setProfessionals] = useState<User[]>([]);
+  const [agendaTypes, setAgendaTypes] = useState<AgendaType[]>([]);
   const [loading, setLoading] = useState(true);
   const [bookingLoading, setBookingLoading] = useState(false);
   
   const [step, setStep] = useState(1);
   const [selectedProf, setSelectedProf] = useState<string | null>(null);
+  const [selectedAgendaType, setSelectedAgendaType] = useState<AgendaType | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    fetchProfessionals();
+    Promise.all([fetchProfessionals(), fetchAgendaTypes()]).then(() => setLoading(false));
   }, []);
 
   const fetchProfessionals = async () => {
@@ -42,13 +44,20 @@ export const PatientBooking: React.FC = () => {
       setProfessionals(mappedProfs);
     } catch (error) {
       console.error('Erro ao buscar profissionais:', error);
-    } finally {
-      setLoading(false);
+    }
+  };
+
+  const fetchAgendaTypes = async () => {
+    try {
+      const { data } = await supabase.from('agenda_types').select('*').order('name');
+      if (data) setAgendaTypes(data as any);
+    } catch (error) {
+      console.error(error);
     }
   };
 
   const handleBooking = async () => {
-    if (!user || !selectedProf || !selectedDate || !selectedTime) return;
+    if (!user || !selectedProf || !selectedDate || !selectedTime || !selectedAgendaType) return;
     
     setBookingLoading(true);
     try {
@@ -57,6 +66,7 @@ export const PatientBooking: React.FC = () => {
         .insert({
           patient_id: user.id,
           professional_id: selectedProf,
+          agenda_type_id: selectedAgendaType.id,
           date: selectedDate,
           start_time: selectedTime,
           status: 'scheduled'
@@ -85,6 +95,7 @@ export const PatientBooking: React.FC = () => {
             setSuccess(false);
             setStep(1);
             setSelectedProf(null);
+            setSelectedAgendaType(null);
             setSelectedDate('');
             setSelectedTime(null);
           }}
@@ -100,18 +111,25 @@ export const PatientBooking: React.FC = () => {
     <div className="space-y-6 animate-fade-in">
       <header>
         <h2 className="text-3xl font-serif text-cinza-dark mb-2">Agendar Consulta</h2>
-        <p className="text-cinza">Escolha o profissional e o melhor horário para você.</p>
+        <p className="text-cinza">Siga os passos para marcar seu atendimento.</p>
       </header>
 
       {/* Steps Indicator */}
-      <div className="flex items-center gap-4 mb-8 text-sm font-medium">
+      <div className="flex items-center gap-4 mb-8 text-sm font-medium overflow-x-auto pb-2">
         <div className={`flex items-center gap-2 ${step >= 1 ? 'text-menta-dark' : 'text-cinza/50'}`}>
           <div className={`w-6 h-6 rounded-full flex items-center justify-center border ${step >= 1 ? 'bg-menta text-white border-menta' : 'border-current'}`}>1</div>
           Profissional
         </div>
-        <div className="w-8 h-px bg-bege-dark"></div>
+        <div className="w-8 h-px bg-bege-dark shrink-0"></div>
+        
         <div className={`flex items-center gap-2 ${step >= 2 ? 'text-menta-dark' : 'text-cinza/50'}`}>
           <div className={`w-6 h-6 rounded-full flex items-center justify-center border ${step >= 2 ? 'bg-menta text-white border-menta' : 'border-current'}`}>2</div>
+          Serviço
+        </div>
+        <div className="w-8 h-px bg-bege-dark shrink-0"></div>
+
+        <div className={`flex items-center gap-2 ${step >= 3 ? 'text-menta-dark' : 'text-cinza/50'}`}>
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center border ${step >= 3 ? 'bg-menta text-white border-menta' : 'border-current'}`}>3</div>
           Data e Hora
         </div>
       </div>
@@ -148,6 +166,44 @@ export const PatientBooking: React.FC = () => {
       )}
 
       {step === 2 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-slide-up">
+          <div className="col-span-full mb-2">
+            <h3 className="text-xl font-medium text-cinza-dark">Qual tipo de atendimento você precisa?</h3>
+          </div>
+          {agendaTypes.map((type) => (
+            <div 
+              key={type.id}
+              onClick={() => {
+                setSelectedAgendaType(type);
+                setStep(3);
+              }}
+              className="bg-white rounded-2xl p-6 shadow-sm border border-sakura/20 hover:border-menta hover:shadow-md cursor-pointer transition-all relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-2 h-full" style={{ backgroundColor: type.color }}></div>
+              <div className="pl-4">
+                <h3 className="font-serif font-bold text-lg text-cinza-dark mb-2">{type.name}</h3>
+                <div className="space-y-1 text-sm text-cinza">
+                   <div className="flex items-center gap-2">
+                     <Clock size={14}/>
+                     <span>Duração: {type.duration_slots}h</span>
+                   </div>
+                   <div className="flex items-center gap-2">
+                     <DollarSign size={14}/>
+                     <span>Valor: R$ {type.price.toFixed(2)}</span>
+                   </div>
+                </div>
+              </div>
+            </div>
+          ))}
+           <div className="col-span-full pt-4">
+             <button onClick={() => setStep(1)} className="text-cinza hover:text-cinza-dark font-medium underline">
+               Voltar para Profissionais
+             </button>
+           </div>
+        </div>
+      )}
+
+      {step === 3 && (
         <div className="bg-white p-8 rounded-2xl shadow-sm border border-sakura/20 animate-slide-up">
            <div className="flex flex-col md:flex-row gap-8">
              <div className="flex-1">
@@ -183,7 +239,7 @@ export const PatientBooking: React.FC = () => {
            </div>
 
            <div className="flex justify-between mt-8 pt-6 border-t border-bege">
-             <button onClick={() => setStep(1)} className="text-cinza hover:text-cinza-dark font-medium">
+             <button onClick={() => setStep(2)} className="text-cinza hover:text-cinza-dark font-medium">
                Voltar
              </button>
              <button 
