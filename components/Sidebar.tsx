@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Calendar, DoorOpen, Settings, LogOut, Flower2, Briefcase, CalendarPlus, DollarSign, FileBarChart, Lock } from 'lucide-react';
+import { LayoutDashboard, Calendar, DoorOpen, Settings, LogOut, Flower2, Briefcase, CalendarPlus, DollarSign, FileBarChart, Lock, ListChecks } from 'lucide-react';
 import { UserRole } from '../types';
 
 interface SidebarProps {
@@ -23,6 +23,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, use
   if (userRole === UserRole.ADMIN) {
     menuItems.push({ id: 'financial', label: 'Financeiro', icon: DollarSign });
     menuItems.push({ id: 'professionals', label: 'Profissionais', icon: Briefcase });
+    menuItems.push({ id: 'agenda_types', label: 'Tipos de Agenda', icon: ListChecks }); // NEW ITEM
     menuItems.push({ id: 'blocks', label: 'Bloqueios', icon: Lock });
     menuItems.push({ id: 'reports', label: 'Relatórios', icon: FileBarChart });
     menuItems.push({ id: 'settings', label: 'Configurações', icon: Settings });
@@ -68,7 +69,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, use
 
       <div className="p-4 border-t border-sakura/20">
         <button 
-          type="button" // Essencial para evitar submit de form
+          type="button" 
           onClick={(e) => {
             e.preventDefault();
             onLogout();

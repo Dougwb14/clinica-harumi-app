@@ -11,6 +11,7 @@ import { Login } from './components/Login';
 import { FinancialManager } from './components/FinancialManager';
 import { Reports } from './components/Reports';
 import { ScheduleBlocker } from './components/ScheduleBlocker';
+import { AgendaTypeManager } from './components/AgendaTypeManager'; // Import novo
 import { UserRole } from './types';
 import { Loader2 } from 'lucide-react';
 
@@ -52,6 +53,8 @@ const AppContent: React.FC = () => {
         return <PatientAgenda />;
       case 'professionals':
         return <ProfessionalManager />;
+      case 'agenda_types': // Nova Rota
+        return <AgendaTypeManager />;
       case 'financial':
         return <FinancialManager />;
       case 'reports':

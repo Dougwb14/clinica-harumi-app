@@ -67,3 +67,11 @@ export interface ScheduleBlock {
   end_time?: string;
   reason: string;
 }
+
+export interface AgendaType {
+  id: string;
+  name: string;
+  price: number;
+  duration_slots: number;
+  color: string;
+}
