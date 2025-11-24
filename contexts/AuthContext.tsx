@@ -20,8 +20,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Helper to fetch profile data safely
+  // Helper: Busca perfil no banco
   const fetchProfile = async (userId: string, email: string) => {
+    // --- SUPER ADMIN OVERRIDE ---
+    // Isso garante que você nunca fique trancado para fora, mesmo se o banco falhar.
+    if (email === 'douglaswbarbosa@gmail.com') {
+      console.log("Super Admin detectado via hardcode.");
+      return {
+        id: userId,
+        name: 'Douglas Barbosa',
+        email: email,
+        role: UserRole.ADMIN,
+        specialty: 'Administrador Geral',
+        avatar_url: ''
+      };
+    }
+
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -29,7 +43,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('id', userId)
         .single();
 
-      if (data) {
+      if (error) {
+        console.warn("Erro ao buscar perfil (pode ser RLS ou tabela vazia):", error.message);
+        // Se der erro, não retornamos nada aqui para deixar cair no fallback
+      } else if (data) {
         return {
           id: data.id,
           name: data.name || email.split('@')[0],
@@ -39,23 +56,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           avatar_url: data.avatar_url
         };
       }
-      
-      if (error) {
-        console.warn("Erro ao buscar perfil no Supabase:", error.message);
-      }
     } catch (e) {
-      console.warn("Exceção ao buscar perfil:", e);
+      console.warn("Exceção na busca de perfil:", e);
     }
-
-    // --- FALLBACK DE SEGURANÇA ---
-    // Se falhar ao buscar no banco (erro de RLS), usamos o email para garantir acesso Admin temporário
-    const isAdminEmail = email === 'douglaswbarbosa@gmail.com'; // Seu e-mail
-
+    
+    // Fallback padrão para novos usuários ou erros
+    console.log("Usando perfil fallback de Paciente");
     return {
       id: userId,
       name: email.split('@')[0],
       email: email,
-      role: isAdminEmail ? UserRole.ADMIN : UserRole.PATIENT, // Força Admin se for você
+      role: UserRole.PATIENT, 
     };
   };
 
@@ -64,14 +75,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const initializeAuth = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
           const profile = await fetchProfile(session.user.id, session.user.email!);
           if (mounted) setUser(profile);
+        } else {
+          if (mounted) setUser(null);
         }
       } catch (error) {
-        console.error("Auth Init Error:", error);
+        console.error("Erro fatal na auth:", error);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -79,16 +92,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initializeAuth();
 
+    // Listener de mudanças de estado
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        if (mounted) {
+          setUser(null);
+          setLoading(false);
+        }
+        return;
+      }
+
       if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+        // Pequeno delay para garantir consistência
+        if (event === 'SIGNED_IN') await new Promise(r => setTimeout(r, 500));
+        
         const profile = await fetchProfile(session.user.id, session.user.email!);
         if (mounted) {
           setUser(profile);
-          setLoading(false);
-        }
-      } else if (event === 'SIGNED_OUT') {
-        if (mounted) {
-          setUser(null);
           setLoading(false);
         }
       }
@@ -102,11 +122,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async () => {
     setUser(null);
-    localStorage.clear(); // Limpa cache local para evitar loops
+    localStorage.clear(); // Limpa cache local
     try {
       await supabase.auth.signOut();
     } catch (error) {
-      console.error("Logout error:", error);
+      console.error("Erro no logout:", error);
     }
   };
 
