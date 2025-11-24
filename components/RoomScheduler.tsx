@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { MOCK_ROOMS, TIME_SLOTS } from '../constants';
-import { Calendar, Clock, CheckCircle2, Users as UsersIcon, Loader2, AlertCircle } from 'lucide-react';
+import { Patient } from '../types';
+import { Calendar, Clock, CheckCircle2, Users as UsersIcon, Loader2, AlertCircle, User as UserIcon } from 'lucide-react';
 
 export const RoomScheduler: React.FC = () => {
   const { user } = useAuth();
@@ -13,13 +14,26 @@ export const RoomScheduler: React.FC = () => {
   const [blockedSlots, setBlockedSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  
+  // Patient Selection Logic
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>('');
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   useEffect(() => {
     if (selectedRoom && selectedDate) {
       fetchSlots();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRoom, selectedDate]);
+
+  useEffect(() => {
+    // Fetch patients for dropdown
+    const fetchPatients = async () => {
+      const { data } = await supabase.from('patients').select('id, name').order('name');
+      if (data) setPatients(data as any);
+    };
+    fetchPatients();
+  }, []);
 
   const fetchSlots = async () => {
     setLoading(true);
@@ -28,7 +42,6 @@ export const RoomScheduler: React.FC = () => {
     setSelectedSlots([]);
     
     try {
-      // 1. Fetch Bookings
       const { data: bookings } = await supabase
         .from('room_bookings')
         .select('start_time')
@@ -39,7 +52,6 @@ export const RoomScheduler: React.FC = () => {
         setOccupiedSlots(bookings.map((b: any) => b.start_time));
       }
 
-      // 2. Fetch Admin Blocks for this Room
       const { data: blocks } = await supabase
         .from('schedule_blocks')
         .select('*')
@@ -51,13 +63,9 @@ export const RoomScheduler: React.FC = () => {
       if (blocks) {
         blocks.forEach((block: any) => {
           if (!block.start_time) {
-            // Full day block
             blockedTimes = [...TIME_SLOTS];
           } else {
-             // Specific range block (simplified logic for MVP, assumes slots match exactly)
-             // In a robust app, check overlaps. Here we just block exact matches or simple ranges.
              blockedTimes.push(block.start_time);
-             // Also block end time? For now simplified.
           }
         });
       }
@@ -78,14 +86,20 @@ export const RoomScheduler: React.FC = () => {
     }
   };
 
-  const handleBooking = async () => {
-    if (!user || !selectedRoom || selectedSlots.length === 0) return;
+  const initiateBooking = () => {
+    if (selectedSlots.length === 0) return;
+    setShowConfirmModal(true);
+  };
+
+  const confirmBooking = async () => {
+    if (!user || !selectedRoom) return;
     setProcessing(true);
 
     try {
       const bookingsToInsert = selectedSlots.map(time => ({
         room_id: selectedRoom,
         professional_id: user.id,
+        patient_id: selectedPatientId || null, // Link Patient
         date: selectedDate,
         start_time: time,
         end_time: calculateEndTime(time)
@@ -98,6 +112,8 @@ export const RoomScheduler: React.FC = () => {
       if (error) throw error;
 
       alert('Reserva confirmada com sucesso!');
+      setShowConfirmModal(false);
+      setSelectedPatientId('');
       fetchSlots(); 
     } catch (error: any) {
       alert('Erro ao reservar: ' + error.message);
@@ -113,7 +129,7 @@ export const RoomScheduler: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in relative">
       <header className="flex flex-col md:flex-row justify-between md:items-end gap-4">
         <div>
           <h2 className="text-3xl font-serif text-cinza-dark mb-2">Aluguel de Salas</h2>
@@ -213,8 +229,8 @@ export const RoomScheduler: React.FC = () => {
 
           <div className="mt-8 flex justify-end">
              <button 
-              disabled={selectedSlots.length === 0 || processing}
-              onClick={handleBooking}
+              disabled={selectedSlots.length === 0}
+              onClick={initiateBooking}
               className={`
                 px-8 py-3 rounded-xl font-medium transition-all flex items-center gap-2
                 ${selectedSlots.length > 0 
@@ -222,8 +238,7 @@ export const RoomScheduler: React.FC = () => {
                   : 'bg-gray-100 text-gray-400 cursor-not-allowed'}
               `}
              >
-               {processing && <Loader2 className="animate-spin" size={18}/>}
-               Confirmar Reserva ({selectedSlots.length})
+               Reservar ({selectedSlots.length})
              </button>
           </div>
         </div>
@@ -231,6 +246,56 @@ export const RoomScheduler: React.FC = () => {
         <div className="bg-white/50 border border-dashed border-sakura/30 rounded-2xl p-12 text-center text-cinza">
           <AlertCircle className="mx-auto mb-2 text-sakura" size={32} />
           <p>Selecione uma sala acima para ver a disponibilidade.</p>
+        </div>
+      )}
+
+      {/* Confirm Modal with Patient Select */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div className="bg-bege p-4 border-b border-sakura/20">
+              <h3 className="font-serif font-bold text-cinza-dark">Confirmar Reserva</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-cinza">
+                Você selecionou <strong>{selectedSlots.length} horários</strong> em <strong>{new Date(selectedDate).toLocaleDateString()}</strong>.
+              </p>
+              
+              <div>
+                <label className="text-xs font-bold text-cinza uppercase mb-1 block">Paciente (Opcional)</label>
+                <div className="relative">
+                   <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-cinza/40" size={16}/>
+                   <select 
+                    value={selectedPatientId}
+                    onChange={(e) => setSelectedPatientId(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-bege/30 rounded-lg border border-bege-dark outline-none focus:border-sakura text-cinza-dark appearance-none"
+                   >
+                     <option value="">Selecione um paciente...</option>
+                     {patients.map(p => (
+                       <option key={p.id} value={p.id}>{p.name}</option>
+                     ))}
+                   </select>
+                </div>
+                <p className="text-xs text-cinza mt-1">Isso vinculará o paciente à reserva no seu histórico.</p>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button 
+                  onClick={() => setShowConfirmModal(false)}
+                  className="flex-1 py-2 border border-bege-dark text-cinza rounded-xl hover:bg-bege"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmBooking}
+                  disabled={processing}
+                  className="flex-1 py-2 bg-menta text-white font-medium rounded-xl hover:bg-menta-dark flex justify-center items-center gap-2"
+                >
+                  {processing ? <Loader2 className="animate-spin" size={16}/> : 'Confirmar'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

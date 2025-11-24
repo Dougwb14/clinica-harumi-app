@@ -11,7 +11,8 @@ import { Login } from './components/Login';
 import { FinancialManager } from './components/FinancialManager';
 import { Reports } from './components/Reports';
 import { ScheduleBlocker } from './components/ScheduleBlocker';
-import { AgendaTypeManager } from './components/AgendaTypeManager'; // Import novo
+import { AgendaTypeManager } from './components/AgendaTypeManager';
+import { PatientManager } from './components/PatientManager'; // Novo
 import { UserRole } from './types';
 import { Loader2 } from 'lucide-react';
 
@@ -24,7 +25,6 @@ const AppContent: React.FC = () => {
       if (user.role === UserRole.PATIENT) {
         setCurrentView('patient_booking');
       } else {
-        // Se for admin ou profissional, vai pro dashboard
         setCurrentView('dashboard');
       }
     }
@@ -53,8 +53,10 @@ const AppContent: React.FC = () => {
         return <PatientAgenda />;
       case 'professionals':
         return <ProfessionalManager />;
-      case 'agenda_types': // Nova Rota
+      case 'agenda_types':
         return <AgendaTypeManager />;
+      case 'patients_record': // Nova Rota
+        return <PatientManager />;
       case 'financial':
         return <FinancialManager />;
       case 'reports':

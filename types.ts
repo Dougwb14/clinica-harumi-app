@@ -19,6 +19,22 @@ export interface User {
   specialty?: string;
 }
 
+export interface Patient {
+  id: string;
+  name: string;
+  rg?: string;
+  cpf?: string;
+  birth_date?: string;
+  marital_status?: string;
+  profession?: string;
+  religion?: string;
+  education_level?: string;
+  address?: string;
+  email?: string;
+  phone?: string;
+  created_at?: string;
+}
+
 export interface Room {
   id: string;
   name: string;
@@ -31,6 +47,8 @@ export interface RoomBooking {
   id: string;
   room_id: string;
   professional_id: string;
+  patient_id?: string; // Novo campo opcional
+  patient?: { name: string }; // Join
   start_time: string;
   end_time: string;
   date: string;
