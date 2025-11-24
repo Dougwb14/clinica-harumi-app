@@ -17,30 +17,32 @@ export const Login: React.FC = () => {
     setLoading(true);
     try {
       if (isLogin) {
-        // Fix: Use v1 signIn syntax and cast to any to avoid type errors
-        const { error } = await (supabase.auth as any).signIn({
+        // CORREÇÃO CRÍTICA: Supabase V2 usa signInWithPassword
+        const { error } = await supabase.auth.signInWithPassword({
           email,
           password
         });
         if (error) throw error;
       } else {
-        // Fix: Use v1 signUp syntax (params separated) and cast to any
-        const { error } = await (supabase.auth as any).signUp({
+        // CORREÇÃO CRÍTICA: Supabase V2 usa signUp com options
+        const { error } = await supabase.auth.signUp({
           email,
-          password
-        }, {
+          password,
+          options: {
             data: {
               name: name,
               role: isProfessional ? 'PROFESSIONAL' : 'PATIENT',
-              specialty: isProfessional ? 'Psicologia' : null // Default
+              specialty: isProfessional ? 'Psicologia' : null
             }
+          }
         });
         if (error) throw error;
         alert('Cadastro realizado! Verifique seu e-mail ou faça login.');
         setIsLogin(true);
       }
     } catch (error: any) {
-      alert(error.message);
+      console.error(error);
+      alert(error.message || 'Erro ao autenticar');
     } finally {
       setLoading(false);
     }

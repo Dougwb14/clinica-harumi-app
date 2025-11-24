@@ -56,8 +56,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const initializeAuth = async () => {
       try {
-        // Fix: Use v1 auth.session() which is synchronous and cast to any
-        const session = (supabase.auth as any).session();
+        // CORREÇÃO CRÍTICA: Supabase V2 usa getSession() assíncrono
+        const { data: { session }, error } = await supabase.auth.getSession();
         
         if (session?.user) {
           const profile = await fetchProfile(session.user.id, session.user.email!);
@@ -73,8 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    // 2. TIMEOUT DE SEGURANÇA (CRÍTICO PARA NÃO TRAVAR TELA BRANCA)
-    // Se o initializeAuth demorar mais que 2 segundos (ex: internet lenta), forçamos o fim do loading.
+    // TIMEOUT DE SEGURANÇA
     const safetyTimeout = setTimeout(() => {
       if (loading && mounted) {
         console.warn("Auth timeout - Forçando liberação da tela.");
@@ -84,8 +83,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initializeAuth();
 
-    // Fix: Use v1 onAuthStateChange signature
-    const { data: authListener } = (supabase.auth as any).onAuthStateChange(async (event: string, session: any) => {
+    // CORREÇÃO CRÍTICA: Listener V2 retorna { data: { subscription } }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
         const profile = await fetchProfile(session.user.id, session.user.email!);
         if (mounted) setUser(profile);
@@ -98,17 +97,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       mounted = false;
       clearTimeout(safetyTimeout);
-      authListener?.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, []);
 
   const signOut = async () => {
-    // LOGOUT OTIMISTA: Limpa a interface IMEDIATAMENTE antes de falar com o servidor
-    // Isso evita a sensação de "botão quebrado"
+    // LOGOUT OTIMISTA
     setUser(null);
     try {
-      // Fix: Cast to any for v1 compatibility
-      await (supabase.auth as any).signOut();
+      await supabase.auth.signOut();
     } catch (error) {
       console.error("Erro silencioso no logout:", error);
     }
