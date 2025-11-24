@@ -10,30 +10,26 @@ export const Login: React.FC = () => {
   
   // Registration fields
   const [name, setName] = useState('');
-  const [isProfessional, setIsProfessional] = useState(false); // Checkbox for signup
+  const [isProfessional, setIsProfessional] = useState(false);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setLoading(true);
-    console.log("Tentando autenticar com versão V2..."); // Log para debug
 
     try {
       if (isLogin) {
-        // CORREÇÃO DEFINITIVA: V2 usa signInWithPassword
-        // O erro "signIn is not a function" acontece porque a V2 removeu o método antigo.
-        const { data, error } = await supabase.auth.signInWithPassword({
+        // Login V2
+        const { error } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password: password.trim()
         });
         
-        if (error) {
-          console.error("Erro Supabase:", error);
-          throw error;
-        }
-        console.log("Login bem sucedido:", data);
+        if (error) throw error;
+        // O AuthContext vai detectar a mudança de sessão automaticamente
       } else {
-        // CORREÇÃO DEFINITIVA: V2 signUp structure
-        const { data, error } = await supabase.auth.signUp({
+        // Cadastro V2
+        const { error } = await supabase.auth.signUp({
           email: email.trim(),
           password: password.trim(),
           options: {
@@ -50,10 +46,10 @@ export const Login: React.FC = () => {
         setIsLogin(true);
       }
     } catch (error: any) {
-      console.error("Erro capturado:", error);
+      console.error(error);
       let msg = error.message;
       if (msg === "Invalid login credentials") msg = "E-mail ou senha incorretos.";
-      alert(msg || 'Erro ao autenticar');
+      alert(msg || 'Erro ao processar.');
     } finally {
       setLoading(false);
     }

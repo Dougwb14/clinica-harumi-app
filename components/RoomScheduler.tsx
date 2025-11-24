@@ -76,17 +76,10 @@ export const RoomScheduler: React.FC = () => {
     setSelectedSlots([]);
     
     try {
+      // Busca simplificada para evitar erros de FK
       const { data: bookings } = await supabase
         .from('room_bookings')
-        .select(`
-          id, 
-          start_time, 
-          time_slot, 
-          professional_id, 
-          patient:patients(name),
-          professional:profiles(name),
-          agenda_type:agenda_types(name, color)
-        `) 
+        .select('*') 
         .eq('room_id', selectedRoom)
         .eq('date', selectedDate);
 
@@ -94,13 +87,31 @@ export const RoomScheduler: React.FC = () => {
         const occupied: string[] = [];
         const bMap: Record<string, any> = {};
 
-        bookings.forEach((b: any) => {
-          const time = (b.start_time || b.time_slot || '').substring(0, 5);
-          if (time) {
-            occupied.push(time);
-            bMap[time] = b;
-          }
-        });
+        // Precisamos buscar nomes extras pois a query acima é crua
+        // Em um app real maior, faríamos isso de forma mais eficiente, mas para garantir o funcionamento:
+        for (const b of bookings) {
+           // Hidratação Manual rápida se for Admin clicando
+           if (isAdmin) {
+             if (b.patient_id) {
+                const { data: p } = await supabase.from('patients').select('name').eq('id', b.patient_id).single();
+                if(p) b.patient = p;
+             }
+             if (b.professional_id) {
+                const { data: pr } = await supabase.from('profiles').select('name').eq('id', b.professional_id).single();
+                if(pr) b.professional = pr;
+             }
+             if (b.agenda_type_id) {
+                const { data: at } = await supabase.from('agenda_types').select('name, color').eq('id', b.agenda_type_id).single();
+                if(at) b.agenda_type = at;
+             }
+           }
+
+           const time = (b.start_time || b.time_slot || '').substring(0, 5);
+           if (time) {
+             occupied.push(time);
+             bMap[time] = b;
+           }
+        }
         setOccupiedSlots(occupied);
         setBookingsMap(bMap);
       }

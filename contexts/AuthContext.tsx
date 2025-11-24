@@ -20,19 +20,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Helper: Busca perfil no banco
+  // Helper: Busca perfil no banco de forma segura
   const fetchProfile = async (userId: string, email: string) => {
     try {
-      // Como as políticas RLS estão configuradas, o usuário logado CONSEGUE ler seu perfil.
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
 
-      if (error) {
-        console.warn("Erro ao buscar perfil (verifique RLS):", error.message);
-      } else if (data) {
+      if (data) {
         return {
           id: data.id,
           name: data.name || email.split('@')[0],
@@ -43,16 +40,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
     } catch (e) {
-      console.warn("Exceção na busca de perfil:", e);
+      console.error("Erro ao buscar perfil:", e);
     }
     
-    // Fallback padrão se não encontrar perfil (evita travamento, mas assume role PATIENT)
-    return {
-      id: userId,
-      name: email.split('@')[0],
-      email: email,
-      role: UserRole.PATIENT, 
-    };
+    // Se falhar ao buscar o perfil, retorna null para forçar logout ou fallback controlado
+    // Não retornamos um objeto "fake" para evitar que entre como paciente indevidamente
+    return null;
   };
 
   useEffect(() => {
@@ -60,6 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const initializeAuth = async () => {
       try {
+        // Verifica sessão atual
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user) {
@@ -69,31 +63,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (mounted) setUser(null);
         }
       } catch (error) {
-        console.error("Erro fatal na auth:", error);
+        console.error("Erro na inicialização:", error);
+        if (mounted) setUser(null);
       } finally {
         if (mounted) setLoading(false);
       }
     };
 
+    // TIMEOUT DE SEGURANÇA:
+    // Se o Supabase demorar mais de 2s para responder (rede lenta ou bug),
+    // forçamos o fim do carregamento para não travar a tela branca.
+    const safetyTimeout = setTimeout(() => {
+      if (loading && mounted) {
+        console.warn("Auth timeout - Forçando liberação da UI");
+        setLoading(false);
+      }
+    }, 2000);
+
     initializeAuth();
 
-    // Listener de mudanças de estado
+    // Escuta mudanças na autenticação (Login/Logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT') {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (session?.user) {
+          const profile = await fetchProfile(session.user.id, session.user.email!);
+          if (mounted) {
+            setUser(profile);
+            setLoading(false);
+          }
+        }
+      } else if (event === 'SIGNED_OUT') {
         if (mounted) {
           setUser(null);
-          setLoading(false);
-        }
-        return;
-      }
-
-      if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-        // Pequeno delay para garantir consistência
-        if (event === 'SIGNED_IN') await new Promise(r => setTimeout(r, 500));
-        
-        const profile = await fetchProfile(session.user.id, session.user.email!);
-        if (mounted) {
-          setUser(profile);
           setLoading(false);
         }
       }
@@ -101,24 +102,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       mounted = false;
+      clearTimeout(safetyTimeout);
       subscription?.unsubscribe();
     };
   }, []);
 
   const signOut = async () => {
-    setUser(null);
-    localStorage.clear(); // Limpa cache local
     try {
+      // Limpeza imediata do estado para UI responder rápido
+      setUser(null);
+      localStorage.clear(); // Limpa cache local para evitar loops de sessão antiga
       await supabase.auth.signOut();
     } catch (error) {
-      console.error("Erro no logout:", error);
+      console.error("Erro ao sair:", error);
     }
   };
 
   const refreshUser = async () => {
     if (user?.id && user?.email) {
       const profile = await fetchProfile(user.id, user.email);
-      setUser(profile);
+      if (profile) setUser(profile);
     }
   };
 

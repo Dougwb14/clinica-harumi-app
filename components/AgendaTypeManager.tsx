@@ -53,7 +53,7 @@ export const AgendaTypeManager: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // FORÇA LÓGICA DE 30 MINUTOS (1 slot)
+    // FORÇA LÓGICA DE 30 MINUTOS (1 slot = 30 min)
     const payload = {
       name: formData.name,
       price: parseFloat(formData.price || '0'),

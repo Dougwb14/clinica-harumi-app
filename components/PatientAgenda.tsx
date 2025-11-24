@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
-import { Appointment, UserRole, User } from '../types';
-import { Calendar as CalendarIcon, Loader2, XCircle, RefreshCw, User as UserIcon, Filter, MapPin, Clock, AlertCircle, DollarSign } from 'lucide-react';
+import { UserRole } from '../types';
+import { Calendar as CalendarIcon, Loader2, XCircle, RefreshCw, User as UserIcon, Filter, MapPin, Clock, AlertCircle } from 'lucide-react';
 
 // Interface Unificada para Exibição
 interface UnifiedAppointment {
@@ -12,13 +12,13 @@ interface UnifiedAppointment {
   start_time: string;
   status: string;
   
-  // IDs para referência
+  // IDs originais
   patient_id?: string;
   professional_id: string;
   agenda_type_id?: string;
   room_id?: string;
 
-  // Dados "Hidratados" (Nomes resolvidos)
+  // Dados Resolvidos (Nomes)
   patient_name: string;
   professional_name: string;
   service_name: string;
@@ -26,23 +26,17 @@ interface UnifiedAppointment {
   room_name?: string;
 }
 
-// Interfaces auxiliares para os mapas de lookup
-interface ProfileLookup { id: string; name: string; role: string; }
-interface PatientLookup { id: string; name: string; }
-interface RoomLookup { id: string; name: string; }
-interface TypeLookup { id: string; name: string; color: string; price: number; }
-
 export const PatientAgenda: React.FC = () => {
   const { user } = useAuth();
   const [appointments, setAppointments] = useState<UnifiedAppointment[]>([]);
   const [filteredAppointments, setFilteredAppointments] = useState<UnifiedAppointment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Dados para Filtros (Carregados separadamente)
+  // Listas para os Filtros
   const [professionalsList, setProfessionalsList] = useState<{id: string, name: string}[]>([]);
   const [patientsList, setPatientsList] = useState<{id: string, name: string}[]>([]);
 
-  // Filtros Selecionados
+  // Estados dos Filtros
   const [filterProf, setFilterProf] = useState('');
   const [filterPat, setFilterPat] = useState('');
 
@@ -50,186 +44,171 @@ export const PatientAgenda: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      loadAllData();
+      loadData();
     }
   }, [user]);
 
-  // Efeito para aplicar filtros localmente quando os dados ou filtros mudam
+  // Aplica filtros sempre que os dados ou as seleções mudam
   useEffect(() => {
     let result = appointments;
 
     if (filterProf) {
-      result = result.filter(apt => apt.professional_id === filterProf);
+      result = result.filter(item => item.professional_id === filterProf);
     }
 
     if (filterPat) {
-      result = result.filter(apt => apt.patient_id === filterPat);
+      result = result.filter(item => item.patient_id === filterPat);
     }
 
     setFilteredAppointments(result);
   }, [appointments, filterProf, filterPat]);
 
-  const loadAllData = async () => {
+  const loadData = async () => {
     setLoading(true);
     try {
-      // 1. Carregar TABELAS AUXILIARES (Lookups)
-      const profilesReq = supabase.from('profiles').select('id, name, role');
-      const patientsReq = supabase.from('patients').select('id, name');
-      const roomsReq = supabase.from('rooms').select('id, name');
-      const typesReq = supabase.from('agenda_types').select('id, name, color, price');
-
-      const [resProfiles, resPatients, resRooms, resTypes] = await Promise.all([
-        profilesReq, patientsReq, roomsReq, typesReq
+      // 1. BUSCAR DADOS AUXILIARES (LOOKUPS)
+      // Buscamos todas as tabelas de referência separadamente para garantir que temos os nomes
+      const [profilesRes, patientsRes, roomsRes, typesRes] = await Promise.all([
+        supabase.from('profiles').select('id, name, role'), // Usuários do App e Profissionais
+        supabase.from('patients').select('id, name'),       // Pacientes do Prontuário (Ficha)
+        supabase.from('rooms').select('id, name'),          // Salas
+        supabase.from('agenda_types').select('id, name, color, price') // Tipos de Agenda
       ]);
 
-      // Mapas para busca rápida (ID -> Objeto)
-      // Tipagem explícita para evitar erros de 'unknown'
-      const profileMap = new Map<string, ProfileLookup>(
-        (resProfiles.data as any[] || []).map(p => [p.id, p])
-      );
-      const patientMap = new Map<string, PatientLookup>(
-        (resPatients.data as any[] || []).map(p => [p.id, p])
-      );
-      const roomMap = new Map<string, RoomLookup>(
-        (resRooms.data as any[] || []).map(r => [r.id, r])
-      );
-      const typeMap = new Map<string, TypeLookup>(
-        (resTypes.data as any[] || []).map(t => [t.id, t])
-      );
+      // Criar Mapas para acesso rápido (ID -> Dados)
+      const profileMap = new Map<string, any>((profilesRes.data || []).map((p: any) => [p.id, p]));
+      const patientMap = new Map<string, any>((patientsRes.data || []).map((p: any) => [p.id, p]));
+      const roomMap = new Map<string, any>((roomsRes.data || []).map((r: any) => [r.id, r]));
+      const typeMap = new Map<string, any>((typesRes.data || []).map((t: any) => [t.id, t]));
 
-      // Montar listas para o Dropdown de Filtros
-      const profilesList = (resProfiles.data as any[] || []);
-      const patientsListRaw = (resPatients.data as any[] || []);
+      // Preencher Dropdowns de Filtro
+      const profs = (profilesRes.data || []).filter((p: any) => p.role === 'PROFESSIONAL' || p.role === 'ADMIN');
+      setProfessionalsList(profs.map((p: any) => ({ id: p.id, name: p.name })));
 
-      const profsDropdown = profilesList.filter(p => p.role === 'PROFESSIONAL' || p.role === 'ADMIN');
-      const patsDropdownApp = profilesList.filter(p => p.role === 'PATIENT').map(p => ({id: p.id, name: p.name + ' (App)'}));
-      const patsDropdownFicha = patientsListRaw.map(p => ({id: p.id, name: p.name + ' (Ficha)'}));
+      const appPatients = (profilesRes.data || []).filter((p: any) => p.role === 'PATIENT').map((p: any) => ({ id: p.id, name: p.name + ' (App)' }));
+      const recordPatients = (patientsRes.data || []).map((p: any) => ({ id: p.id, name: p.name + ' (Ficha)' }));
       
-      const allPats = [...patsDropdownApp, ...patsDropdownFicha].sort((a, b) => a.name.localeCompare(b.name));
-      
-      setProfessionalsList(profsDropdown);
+      // Remove duplicatas e ordena
+      const allPats = [...appPatients, ...recordPatients].sort((a, b) => a.name.localeCompare(b.name));
       setPatientsList(allPats);
 
-      // 2. Carregar DADOS PRINCIPAIS (Agendamentos e Reservas)
-      let appointmentsQuery = supabase.from('appointments').select('*');
-      let bookingsQuery = supabase.from('room_bookings').select('*');
+      // 2. BUSCAR AGENDAMENTOS E RESERVAS (DADOS CRUS)
+      // Nota: Não usamos .select('*, patient:...') para evitar falhas de Foreign Key
+      let appQuery = supabase.from('appointments').select('*');
+      let roomQuery = supabase.from('room_bookings').select('*');
 
-      // Se NÃO for Admin, filtramos no banco para segurança
+      // Restrição de Segurança para Não-Admins (Caso RLS falhe, filtramos aqui também)
       if (!isAdmin) {
         if (user?.role === UserRole.PROFESSIONAL) {
-          appointmentsQuery = appointmentsQuery.eq('professional_id', user.id);
-          bookingsQuery = bookingsQuery.eq('professional_id', user.id);
+          appQuery = appQuery.eq('professional_id', user.id);
+          roomQuery = roomQuery.eq('professional_id', user.id);
         } else if (user?.role === UserRole.PATIENT) {
-          appointmentsQuery = appointmentsQuery.eq('patient_id', user.id);
-          // Pacientes não veem room_bookings diretamente
-          bookingsQuery = bookingsQuery.eq('id', '00000000-0000-0000-0000-000000000000'); 
+          appQuery = appQuery.eq('patient_id', user.id);
+          roomQuery = roomQuery.eq('id', '0'); // Paciente não vê reserva técnica de sala
         }
       }
 
-      const [resApp, resBook] = await Promise.all([appointmentsQuery, bookingsQuery]);
+      const [appData, roomData] = await Promise.all([appQuery, roomQuery]);
 
-      const rawAppointments = resApp.data || [];
-      const rawBookings = resBook.data || [];
+      const rawAppointments = appData.data || [];
+      const rawRoomBookings = roomData.data || [];
 
-      const unified: UnifiedAppointment[] = [];
+      const unifiedList: UnifiedAppointment[] = [];
 
-      // Helper para achar nome do paciente em QUALQUER tabela
-      const findPatientName = (id?: string) => {
+      // Função Helper para resolver nome do paciente (tenta nas duas tabelas)
+      const resolvePatientName = (id?: string) => {
         if (!id) return 'Não informado';
-        
-        const patient = patientMap.get(id);
-        if (patient) return patient.name;
-        
-        const profile = profileMap.get(id);
-        if (profile) return profile.name;
-        
-        return 'Paciente Desconhecido';
+        if (patientMap.has(id)) return patientMap.get(id).name + ' (Ficha)';
+        if (profileMap.has(id)) return profileMap.get(id).name + ' (App)';
+        return 'Paciente não encontrado';
       };
 
-      const findProfName = (id: string) => {
-        const prof = profileMap.get(id);
-        if (prof) return prof.name;
-        return 'Profissional';
-      };
-
-      // 3. MAPEAR Agendamentos (App)
+      // 3. PROCESSAR AGENDAMENTOS (APPOINTMENTS)
       rawAppointments.forEach((item: any) => {
         const agendaType = item.agenda_type_id ? typeMap.get(item.agenda_type_id) : null;
+        const prof = profileMap.get(item.professional_id);
         
-        unified.push({
+        unifiedList.push({
           id: item.id,
           source: 'appointment',
           date: item.date,
-          start_time: item.start_time ? item.start_time.substring(0,5) : '00:00',
+          // Garante formato HH:MM
+          start_time: (item.start_time || '00:00').substring(0, 5),
           status: item.status,
           patient_id: item.patient_id,
           professional_id: item.professional_id,
           agenda_type_id: item.agenda_type_id,
           
-          patient_name: findPatientName(item.patient_id),
-          professional_name: findProfName(item.professional_id),
-          service_name: agendaType?.name || 'Consulta',
-          service_color: agendaType?.color || '#B5DAD7'
+          // Resolução Manual de Nomes
+          patient_name: resolvePatientName(item.patient_id),
+          professional_name: prof ? prof.name : 'Profissional Desconhecido',
+          service_name: agendaType ? agendaType.name : 'Consulta',
+          service_color: agendaType ? agendaType.color : '#B5DAD7'
         });
       });
 
-      // 4. MAPEAR Reservas de Sala (Admin)
-      rawBookings.forEach((item: any) => {
+      // 4. PROCESSAR RESERVAS DE SALA (ROOM BOOKINGS)
+      rawRoomBookings.forEach((item: any) => {
         const agendaType = item.agenda_type_id ? typeMap.get(item.agenda_type_id) : null;
         const room = item.room_id ? roomMap.get(item.room_id) : null;
+        const prof = profileMap.get(item.professional_id);
+        const time = (item.start_time || item.time_slot || '00:00').substring(0, 5);
 
-        unified.push({
+        unifiedList.push({
           id: item.id,
           source: 'room_booking',
           date: item.date,
-          start_time: (item.start_time || item.time_slot || '00:00').substring(0,5),
-          status: 'scheduled', // Reservas de sala são sempre agendadas a menos que deletadas
+          start_time: time,
+          status: 'scheduled', // Reservas de sala são ativas a menos que deletadas
           patient_id: item.patient_id,
           professional_id: item.professional_id,
           agenda_type_id: item.agenda_type_id,
           room_id: item.room_id,
 
-          patient_name: item.patient_id ? findPatientName(item.patient_id) : '(Reservado s/ Paciente)',
-          professional_name: findProfName(item.professional_id),
-          service_name: agendaType?.name || 'Aluguel de Sala',
-          service_color: agendaType?.color || '#FADADD',
-          room_name: room?.name || 'Sala'
+          patient_name: item.patient_id ? resolvePatientName(item.patient_id) : '(Reserva de Sala)',
+          professional_name: prof ? prof.name : 'Profissional Desconhecido',
+          service_name: agendaType ? agendaType.name : 'Aluguel de Sala',
+          service_color: agendaType ? agendaType.color : '#FADADD',
+          room_name: room ? room.name : 'Sala Desconhecida'
         });
       });
 
-      // Ordenar por Data e Hora
-      unified.sort((a, b) => {
-        const da = new Date(`${a.date}T${a.start_time}`);
-        const db = new Date(`${b.date}T${b.start_time}`);
-        return da.getTime() - db.getTime();
+      // Ordenação por Data e Hora
+      unifiedList.sort((a, b) => {
+        const dateA = new Date(`${a.date}T${a.start_time}`);
+        const dateB = new Date(`${b.date}T${b.start_time}`);
+        return dateA.getTime() - dateB.getTime();
       });
 
-      setAppointments(unified);
+      setAppointments(unifiedList);
 
-    } catch (error) {
-      console.error("Erro crítico ao montar agenda:", error);
+    } catch (err) {
+      console.error("Erro fatal no carregamento:", err);
     } finally {
       setLoading(false);
     }
   };
 
   const handleCancel = async (item: UnifiedAppointment) => {
-    if (!confirm('Cancelar este agendamento? Esta ação é irreversível.')) return;
+    if (!confirm(`Tem certeza que deseja cancelar: ${item.service_name}?`)) return;
 
     try {
+      let error;
       if (item.source === 'room_booking') {
-        const { error } = await supabase.from('room_bookings').delete().eq('id', item.id);
-        if (error) throw error;
+        const res = await supabase.from('room_bookings').delete().eq('id', item.id);
+        error = res.error;
       } else {
-        const { error } = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', item.id);
-        if (error) throw error;
+        const res = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', item.id);
+        error = res.error;
       }
+
+      if (error) throw error;
       
-      alert('Cancelado com sucesso.');
-      loadAllData(); 
-    } catch (error: any) {
-      console.error(error);
-      alert('Erro ao cancelar: ' + (error.message || 'Verifique permissões.'));
+      alert('Cancelado com sucesso!');
+      loadData(); // Recarrega a lista
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro ao cancelar: ' + (err.message || 'Verifique permissões.'));
     }
   };
 
@@ -239,6 +218,7 @@ export const PatientAgenda: React.FC = () => {
     return `${day}/${month}/${year}`;
   };
 
+  // Agrupamento por data para visualização
   const groupedAppointments = filteredAppointments.reduce((acc, apt) => {
     const dateKey = apt.date;
     if (!acc[dateKey]) acc[dateKey] = [];
@@ -254,7 +234,7 @@ export const PatientAgenda: React.FC = () => {
           <p className="text-cinza text-sm">Visualização unificada de reservas e consultas (30 min).</p>
         </div>
         <button 
-          onClick={loadAllData}
+          onClick={loadData}
           className="p-2 bg-white hover:bg-bege text-cinza rounded-full shadow-sm border border-bege transition-colors"
           title="Recarregar Dados"
         >
@@ -275,7 +255,7 @@ export const PatientAgenda: React.FC = () => {
                onChange={(e) => setFilterProf(e.target.value)}
                className="w-full p-2 bg-bege/30 rounded-lg border border-bege-dark text-sm outline-none"
              >
-               <option value="">Todos</option>
+               <option value="">Todos os Profissionais</option>
                {professionalsList.map(p => (
                  <option key={p.id} value={p.id}>{p.name}</option>
                ))}
@@ -289,7 +269,7 @@ export const PatientAgenda: React.FC = () => {
                onChange={(e) => setFilterPat(e.target.value)}
                className="w-full p-2 bg-bege/30 rounded-lg border border-bege-dark text-sm outline-none"
              >
-               <option value="">Todos</option>
+               <option value="">Todos os Pacientes</option>
                {patientsList.map(p => (
                  <option key={p.id} value={p.id}>{p.name}</option>
                ))}
@@ -297,7 +277,10 @@ export const PatientAgenda: React.FC = () => {
            </div>
 
            {(filterProf || filterPat) && (
-             <button onClick={() => {setFilterProf(''); setFilterPat('');}} className="text-xs text-red-400 underline pb-2">
+             <button 
+               onClick={() => { setFilterProf(''); setFilterPat(''); }} 
+               className="text-xs text-red-400 underline pb-2 hover:text-red-600"
+             >
                Limpar
              </button>
            )}
@@ -332,6 +315,7 @@ export const PatientAgenda: React.FC = () => {
                  {groupedAppointments[dateKey].map(apt => (
                    <div key={apt.id} className="p-4 hover:bg-bege/10 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
                       
+                      {/* 1. Horário */}
                       <div className="flex items-center gap-4 min-w-[150px]">
                         <div className="flex flex-col items-center bg-white border border-bege-dark rounded-lg p-2 min-w-[70px]">
                            <span className="text-lg font-serif font-bold text-cinza-dark leading-none">{apt.start_time}</span>
@@ -349,6 +333,7 @@ export const PatientAgenda: React.FC = () => {
                         </div>
                       </div>
 
+                      {/* 2. Detalhes */}
                       <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
                          <div className="flex items-center gap-2 text-sm text-cinza-dark">
                            <div className="w-8 h-8 rounded-full bg-sakura/20 flex items-center justify-center text-sakura-dark shrink-0">
@@ -384,12 +369,13 @@ export const PatientAgenda: React.FC = () => {
 
                          {isAdmin && (
                             <div className="flex items-center gap-2 text-sm text-cinza lg:col-span-3 mt-2 pt-2 border-t border-bege/50">
-                               <span className="text-xs font-bold uppercase text-cinza/60">Profissional Responsável:</span>
+                               <span className="text-xs font-bold uppercase text-cinza/60">Profissional:</span>
                                <span className="text-cinza-dark font-medium">{apt.professional_name}</span>
                             </div>
                          )}
                       </div>
 
+                      {/* 3. Ações */}
                       <div className="flex justify-end">
                         {apt.status !== 'cancelled' && (isAdmin || user?.id === apt.professional_id) && (
                           <button 

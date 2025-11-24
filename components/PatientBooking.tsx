@@ -218,7 +218,7 @@ export const PatientBooking: React.FC = () => {
              
              {selectedDate && (
                <div className="flex-1 animate-fade-in">
-                 <label className="block text-sm font-medium text-cinza mb-2">Horários Disponíveis</label>
+                 <label className="block text-sm font-medium text-cinza mb-2">Horários Disponíveis (30 min)</label>
                  <div className="grid grid-cols-3 gap-3">
                    {TIME_SLOTS.map(time => (
                      <button
