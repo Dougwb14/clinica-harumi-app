@@ -47,8 +47,8 @@ export interface RoomBooking {
   id: string;
   room_id: string;
   professional_id: string;
-  patient_id?: string; // Novo campo opcional
-  patient?: { name: string }; // Join
+  patient_id?: string;
+  patient?: { name: string };
   start_time: string;
   end_time: string;
   date: string;
@@ -58,8 +58,8 @@ export interface Appointment {
   id: string;
   patient_id: string;
   professional_id: string;
-  professional_name?: string; // Join field
-  patient_name?: string;     // Join field
+  professional_name?: string;
+  patient_name?: string;
   date: string;
   start_time: string;
   status: 'scheduled' | 'completed' | 'cancelled';
@@ -79,9 +79,9 @@ export interface FinancialTransaction {
 export interface ScheduleBlock {
   id: string;
   target_type: 'ROOM' | 'PROFESSIONAL';
-  target_id: string; // Room ID or User ID
+  target_id: string;
   date: string;
-  start_time?: string; // If null, full day
+  start_time?: string;
   end_time?: string;
   reason: string;
 }
@@ -92,4 +92,12 @@ export interface AgendaType {
   price: number;
   duration_slots: number;
   color: string;
+}
+
+export interface ClinicSettings {
+  id: number;
+  name: string;
+  cnpj: string;
+  address: string;
+  phone: string;
 }
