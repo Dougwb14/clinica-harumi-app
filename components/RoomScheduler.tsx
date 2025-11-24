@@ -8,11 +8,13 @@ import { Calendar, Clock, CheckCircle2, Users as UsersIcon, Loader2, AlertCircle
 export const RoomScheduler: React.FC = () => {
   const { user } = useAuth();
   
-  // FIX: Inicializa a data com o horário local para evitar UTC offset incorreto na carga inicial
   const getLocalDate = () => {
+    // Retorna a data em string YYYY-MM-DD local sem converter para UTC
     const d = new Date();
-    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-    return d.toISOString().split('T')[0];
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   const [selectedDate, setSelectedDate] = useState<string>(getLocalDate());
@@ -102,20 +104,18 @@ export const RoomScheduler: React.FC = () => {
         .eq('date', selectedDate);
 
       if (bookings) {
-        // Normaliza o horário (start_time ou time_slot)
-        const occupied = bookings.map((b: any) => {
-          // Garante formato HH:MM
-          const rawTime = b.start_time || b.time_slot;
-          return rawTime.substring(0, 5);
+        const occupied: string[] = [];
+        const bMap: Record<string, any> = {};
+
+        bookings.forEach((b: any) => {
+          // Normaliza horário para HH:MM
+          const time = (b.start_time || b.time_slot || '').substring(0, 5);
+          if (time) {
+            occupied.push(time);
+            bMap[time] = b;
+          }
         });
         setOccupiedSlots(occupied);
-        
-        // Map para Admin Details
-        const bMap: Record<string, any> = {};
-        bookings.forEach((b: any) => {
-          const time = (b.start_time || b.time_slot).substring(0, 5);
-          bMap[time] = b;
-        });
         setBookingsMap(bMap);
       }
 
@@ -153,20 +153,16 @@ export const RoomScheduler: React.FC = () => {
     if (isBlocked) return;
 
     if (isOccupied) {
-      // Se for Admin, abre modal de detalhes
       if (isAdmin) {
         const booking = bookingsMap[time];
         if (booking) {
           setSelectedBookingDetail(booking);
           setShowDetailModal(true);
-        } else {
-          alert("Detalhes da reserva não encontrados.");
         }
       }
       return;
     }
 
-    // Toggle Selection
     if (selectedSlots.includes(time)) {
       setSelectedSlots(selectedSlots.filter(t => t !== time));
     } else {
@@ -244,12 +240,15 @@ export const RoomScheduler: React.FC = () => {
   };
 
   const calculateEndTime = (startTime: string) => {
+    // Adiciona 30 minutos ao horário de início
     const [hour, min] = startTime.split(':').map(Number);
-    const endHour = hour + 1;
-    return `${endHour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
+    const date = new Date();
+    date.setHours(hour, min, 0, 0);
+    date.setMinutes(date.getMinutes() + 30);
+    
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   };
 
-  // FIX: Função segura para formatar data sem conversão de fuso horário
   const formatDisplayDate = (dateStr: string) => {
     if (!dateStr) return '';
     const [year, month, day] = dateStr.split('-');
@@ -323,7 +322,7 @@ export const RoomScheduler: React.FC = () => {
              </h3>
              <div className="flex items-center gap-4 text-sm flex-wrap">
                 <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-200"></div> Bloqueado</span>
-                <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-bege-dark"></div> Ocupado</span>
+                <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-bege-dark"></div> Ocupado {isAdmin && '(Admin)'}</span>
                 <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-white border border-gray-200"></div> Livre</span>
              </div>
           </div>
@@ -331,7 +330,7 @@ export const RoomScheduler: React.FC = () => {
           {loading ? (
             <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-sakura"/></div>
           ) : (
-            <div className="grid grid-cols-3 md:grid-cols-6 lg:grid-cols-12 gap-3">
+            <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
               {TIME_SLOTS.map((time, idx) => {
                 const isOccupied = occupiedSlots.includes(time);
                 const isBlocked = blockedSlots.includes(time);

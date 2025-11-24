@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { AgendaType } from '../types';
-import { Plus, Trash2, Edit2, X, Tag, DollarSign, Clock, Palette, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Tag, DollarSign, Palette, Loader2 } from 'lucide-react';
 
 export const AgendaTypeManager: React.FC = () => {
   const [types, setTypes] = useState<AgendaType[]>([]);
@@ -12,7 +12,6 @@ export const AgendaTypeManager: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     price: '',
-    duration_slots: 1,
     color: '#B5DAD7'
   });
 
@@ -39,7 +38,6 @@ export const AgendaTypeManager: React.FC = () => {
       setFormData({
         name: type.name,
         price: type.price.toString(),
-        duration_slots: type.duration_slots,
         color: type.color
       });
     } else {
@@ -47,7 +45,6 @@ export const AgendaTypeManager: React.FC = () => {
       setFormData({
         name: '',
         price: '',
-        duration_slots: 1,
         color: '#B5DAD7' // Cor padrão Menta
       });
     }
@@ -59,7 +56,7 @@ export const AgendaTypeManager: React.FC = () => {
     const payload = {
       name: formData.name,
       price: parseFloat(formData.price || '0'),
-      duration_slots: formData.duration_slots,
+      duration_slots: 1, // Padrão fixo, já que removemos a opção da UI
       color: formData.color
     };
 
@@ -124,10 +121,6 @@ export const AgendaTypeManager: React.FC = () => {
                      <span className="font-medium">R$ {type.price.toFixed(2)}</span>
                    </div>
                    <div className="flex items-center gap-2 text-sm text-cinza">
-                     <div className="w-6 h-6 rounded-full bg-bege flex items-center justify-center text-cinza-dark"><Clock size={14}/></div>
-                     <span>{type.duration_slots} período(s) de 1h</span>
-                   </div>
-                   <div className="flex items-center gap-2 text-sm text-cinza">
                      <div className="w-6 h-6 rounded-full bg-bege flex items-center justify-center text-cinza-dark"><Palette size={14}/></div>
                      <div className="flex items-center gap-2">
                         <span className="w-4 h-4 rounded-full border border-gray-200" style={{backgroundColor: type.color}}></span>
@@ -189,31 +182,16 @@ export const AgendaTypeManager: React.FC = () => {
                 </div>
               </div>
 
-              {/* Campos Períodos e Cor (Lado a Lado) */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-cinza uppercase">Períodos</label>
-                  <select 
-                    value={formData.duration_slots}
-                    onChange={(e) => setFormData({...formData, duration_slots: parseInt(e.target.value)})}
-                    className="w-full px-3 py-2 bg-bege/30 rounded-lg border border-bege-dark focus:border-sakura outline-none text-cinza-dark"
-                  >
-                    {[1, 2, 3, 4, 5, 6].map(n => (
-                      <option key={n} value={n}>{n} ({n}h)</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-cinza uppercase">Cor</label>
-                  <div className="flex items-center gap-2">
-                    <input 
-                      type="color" 
-                      value={formData.color}
-                      onChange={(e) => setFormData({...formData, color: e.target.value})}
-                      className="h-10 w-full cursor-pointer bg-transparent border-none rounded-lg"
-                    />
-                  </div>
+              {/* Campo Cor */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-cinza uppercase">Cor</label>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="color" 
+                    value={formData.color}
+                    onChange={(e) => setFormData({...formData, color: e.target.value})}
+                    className="h-10 w-full cursor-pointer bg-transparent border-none rounded-lg"
+                  />
                 </div>
               </div>
 
