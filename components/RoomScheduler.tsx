@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { TIME_SLOTS } from '../constants';
-import { Patient, Room } from '../types';
-import { Calendar, Clock, CheckCircle2, Users as UsersIcon, Loader2, AlertCircle, User as UserIcon } from 'lucide-react';
+import { Patient, Room, AgendaType } from '../types';
+import { Calendar, Clock, CheckCircle2, Users as UsersIcon, Loader2, AlertCircle, User as UserIcon, Tag } from 'lucide-react';
 
 export const RoomScheduler: React.FC = () => {
   const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [rooms, setRooms] = useState<Room[]>([]); // State for real rooms
+  const [rooms, setRooms] = useState<Room[]>([]); 
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
@@ -17,13 +17,18 @@ export const RoomScheduler: React.FC = () => {
   const [roomsLoading, setRoomsLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   
-  // Patient Selection Logic
+  // Data for Dropdowns
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [agendaTypes, setAgendaTypes] = useState<AgendaType[]>([]);
+  
+  // Selection State
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
+  const [selectedAgendaTypeId, setSelectedAgendaTypeId] = useState<string>('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   useEffect(() => {
     fetchRooms();
+    fetchDropdownData();
   }, []);
 
   useEffect(() => {
@@ -32,14 +37,15 @@ export const RoomScheduler: React.FC = () => {
     }
   }, [selectedRoom, selectedDate]);
 
-  useEffect(() => {
-    // Fetch patients for dropdown
-    const fetchPatients = async () => {
-      const { data } = await supabase.from('patients').select('id, name').order('name');
-      if (data) setPatients(data as any);
-    };
-    fetchPatients();
-  }, []);
+  const fetchDropdownData = async () => {
+    // Fetch Patients
+    const { data: patData } = await supabase.from('patients').select('id, name').order('name');
+    if (patData) setPatients(patData as any);
+
+    // Fetch Agenda Types
+    const { data: typeData } = await supabase.from('agenda_types').select('*').order('name');
+    if (typeData) setAgendaTypes(typeData as any);
+  };
 
   const fetchRooms = async () => {
     setRoomsLoading(true);
@@ -51,11 +57,6 @@ export const RoomScheduler: React.FC = () => {
       
       if (error) throw error;
       setRooms(data as Room[]);
-      
-      // Select first room by default if available
-      if (data && data.length > 0) {
-        // setSelectedRoom(data[0].id); // Optional: auto-select
-      }
     } catch (error) {
       console.error('Error fetching rooms:', error);
     } finally {
@@ -72,12 +73,11 @@ export const RoomScheduler: React.FC = () => {
     try {
       const { data: bookings } = await supabase
         .from('room_bookings')
-        .select('start_time, time_slot') // Fetch both to be safe
+        .select('start_time, time_slot') 
         .eq('room_id', selectedRoom)
         .eq('date', selectedDate);
 
       if (bookings) {
-        // Support both old 'time_slot' and new 'start_time'
         setOccupiedSlots(bookings.map((b: any) => b.start_time || b.time_slot));
       }
 
@@ -123,6 +123,7 @@ export const RoomScheduler: React.FC = () => {
   const handleCloseModal = () => {
     setShowConfirmModal(false);
     setSelectedPatientId('');
+    setSelectedAgendaTypeId('');
   };
 
   const confirmBooking = async () => {
@@ -134,10 +135,11 @@ export const RoomScheduler: React.FC = () => {
         room_id: selectedRoom,
         professional_id: user.id,
         patient_id: selectedPatientId || null,
+        agenda_type_id: selectedAgendaTypeId || null, // Vínculo com Tipo de Agenda
         date: selectedDate,
         start_time: time,
         end_time: calculateEndTime(time),
-        time_slot: time // <--- CORREÇÃO: Enviando também para a coluna antiga para satisfazer o banco
+        time_slot: time 
       }));
 
       const { error } = await supabase
@@ -151,11 +153,7 @@ export const RoomScheduler: React.FC = () => {
       fetchSlots(); 
     } catch (error: any) {
       console.error(error);
-      if (error.code === '22P02') {
-         alert('ERRO DE DADOS: O ID da sala é inválido. Recarregue a página.');
-      } else {
-         alert('Erro ao reservar: ' + error.message);
-      }
+      alert('Erro ao reservar: ' + error.message);
     } finally {
       setProcessing(false);
     }
@@ -309,6 +307,25 @@ export const RoomScheduler: React.FC = () => {
                 Você selecionou <strong>{selectedSlots.length} horários</strong> em <strong>{new Date(selectedDate).toLocaleDateString()}</strong>.
               </p>
               
+              {/* Seleção de Tipo de Agenda */}
+              <div>
+                <label className="text-xs font-bold text-cinza uppercase mb-1 block">Tipo de Agenda</label>
+                <div className="relative">
+                   <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-cinza/40" size={16}/>
+                   <select 
+                    value={selectedAgendaTypeId}
+                    onChange={(e) => setSelectedAgendaTypeId(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-bege/30 rounded-lg border border-bege-dark outline-none focus:border-sakura text-cinza-dark appearance-none"
+                   >
+                     <option value="">Selecione o serviço...</option>
+                     {agendaTypes.map(t => (
+                       <option key={t.id} value={t.id}>{t.name} (R$ {t.price})</option>
+                     ))}
+                   </select>
+                </div>
+              </div>
+
+              {/* Seleção de Paciente */}
               <div>
                 <label className="text-xs font-bold text-cinza uppercase mb-1 block">Paciente (Opcional)</label>
                 <div className="relative">
@@ -324,7 +341,6 @@ export const RoomScheduler: React.FC = () => {
                      ))}
                    </select>
                 </div>
-                <p className="text-xs text-cinza mt-1">Isso vinculará o paciente à reserva no seu histórico.</p>
               </div>
 
               <div className="flex gap-3 mt-6">

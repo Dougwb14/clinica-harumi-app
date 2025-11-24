@@ -48,6 +48,7 @@ export interface RoomBooking {
   room_id: string;
   professional_id: string;
   patient_id?: string;
+  agenda_type_id?: string; // Novo campo
   patient?: { name: string };
   start_time: string;
   end_time: string;
