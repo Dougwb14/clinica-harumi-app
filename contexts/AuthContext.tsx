@@ -20,10 +20,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Função auxiliar para buscar dados do perfil
+  // Busca dados extras do usuário (cargo, nome, etc)
   const fetchProfile = async (userId: string, email: string) => {
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
@@ -40,9 +40,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
     } catch (e) {
-      console.warn("Perfil não encontrado, usando fallback:", e);
+      // Silently fail and return fallback
     }
-    // Fallback: Se não achar perfil no banco, cria objeto temporário para permitir login
+    
+    // Fallback para permitir login mesmo se o perfil não tiver sido criado ainda
     return {
       id: userId,
       name: email.split('@')[0],
@@ -54,66 +55,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let mounted = true;
 
-    const initializeAuth = async () => {
-      try {
-        // CORREÇÃO: Supabase V2 usa getSession() que é assíncrono
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (session?.user) {
-          const profile = await fetchProfile(session.user.id, session.user.email!);
-          if (mounted) setUser(profile);
-        } else {
-          if (mounted) setUser(null);
+    // Função centralizada para definir o usuário
+    const handleSession = async (session: any) => {
+      if (session?.user) {
+        const profile = await fetchProfile(session.user.id, session.user.email!);
+        if (mounted) {
+          setUser(profile);
+          setLoading(false);
         }
-      } catch (error) {
-        console.error("Erro na inicialização da auth:", error);
-      } finally {
-        if (mounted) setLoading(false);
+      } else {
+        if (mounted) {
+          setUser(null);
+          setLoading(false);
+        }
       }
     };
 
-    // TIMEOUT DE SEGURANÇA: Se demorar mais de 2s, força a tela a abrir
-    // Isso evita a "Tela Branca da Morte" se a conexão estiver lenta
-    const safetyTimeout = setTimeout(() => {
-      if (loading && mounted) {
-        console.warn("Auth demorou. Forçando abertura do app.");
+    // 1. Verificar sessão atual ao carregar a página
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleSession(session);
+    });
+
+    // 2. Ouvir mudanças em tempo real (Login, Logout, Auto-Refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleSession(session);
+    });
+
+    // 3. Timeout de segurança: Se o Supabase não responder em 3s, libera a tela
+    const timer = setTimeout(() => {
+      if (mounted && loading) {
+        console.warn("Forçando fim do carregamento por timeout.");
         setLoading(false);
       }
-    }, 2000);
-
-    initializeAuth();
-
-    // CORREÇÃO: Supabase V2 listener retorna { data: { subscription } }
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth event:", event);
-      if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-        const profile = await fetchProfile(session.user.id, session.user.email!);
-        if (mounted) {
-            setUser(profile);
-            setLoading(false);
-        }
-      } else if (event === 'SIGNED_OUT') {
-        if (mounted) {
-            setUser(null);
-            setLoading(false);
-        }
-      }
-    });
+    }, 3000);
 
     return () => {
       mounted = false;
-      clearTimeout(safetyTimeout);
-      subscription?.unsubscribe();
+      clearTimeout(timer);
+      subscription.unsubscribe();
     };
   }, []);
 
   const signOut = async () => {
-    // Logout Otimista: Limpa UI instantaneamente
-    setUser(null);
     try {
+      // 1. Limpa estado da UI imediatamente
+      setUser(null);
+      
+      // 2. Limpa armazenamento local (Resolve o problema de "não desconectar")
+      localStorage.clear(); 
+      
+      // 3. Avisa o Supabase
       await supabase.auth.signOut();
+      
     } catch (error) {
-      console.error("Erro ao deslogar no servidor:", error);
+      console.error("Erro ao sair:", error);
+      // Mesmo com erro, forçamos o refresh para garantir o logout visual
+      window.location.reload();
     }
   };
 
