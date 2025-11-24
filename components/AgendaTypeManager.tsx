@@ -56,7 +56,7 @@ export const AgendaTypeManager: React.FC = () => {
     const payload = {
       name: formData.name,
       price: parseFloat(formData.price || '0'),
-      duration_slots: 1, // Padrão fixo, já que removemos a opção da UI
+      duration_slots: 1, // Padrão fixo (1 slot de 30min), já que removemos a opção da UI
       color: formData.color
     };
 
