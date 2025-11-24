@@ -26,6 +26,12 @@ interface UnifiedAppointment {
   room_name?: string;
 }
 
+// Interfaces auxiliares para os mapas de lookup
+interface ProfileLookup { id: string; name: string; role: string; }
+interface PatientLookup { id: string; name: string; }
+interface RoomLookup { id: string; name: string; }
+interface TypeLookup { id: string; name: string; color: string; price: number; }
+
 export const PatientAgenda: React.FC = () => {
   const { user } = useAuth();
   const [appointments, setAppointments] = useState<UnifiedAppointment[]>([]);
@@ -67,9 +73,6 @@ export const PatientAgenda: React.FC = () => {
     setLoading(true);
     try {
       // 1. Carregar TABELAS AUXILIARES (Lookups)
-      // Buscamos tudo para montar o "dicionário" de nomes. 
-      // Em apps gigantes isso seria paginado, mas para uma clínica funciona perfeitamente e é muito rápido.
-      
       const profilesReq = supabase.from('profiles').select('id, name, role');
       const patientsReq = supabase.from('patients').select('id, name');
       const roomsReq = supabase.from('rooms').select('id, name');
@@ -80,15 +83,27 @@ export const PatientAgenda: React.FC = () => {
       ]);
 
       // Mapas para busca rápida (ID -> Objeto)
-      const profileMap = new Map(resProfiles.data?.map(p => [p.id, p]));
-      const patientMap = new Map(resPatients.data?.map(p => [p.id, p]));
-      const roomMap = new Map(resRooms.data?.map(r => [r.id, r]));
-      const typeMap = new Map(resTypes.data?.map(t => [t.id, t]));
+      // Tipagem explícita para evitar erros de 'unknown'
+      const profileMap = new Map<string, ProfileLookup>(
+        (resProfiles.data as any[] || []).map(p => [p.id, p])
+      );
+      const patientMap = new Map<string, PatientLookup>(
+        (resPatients.data as any[] || []).map(p => [p.id, p])
+      );
+      const roomMap = new Map<string, RoomLookup>(
+        (resRooms.data as any[] || []).map(r => [r.id, r])
+      );
+      const typeMap = new Map<string, TypeLookup>(
+        (resTypes.data as any[] || []).map(t => [t.id, t])
+      );
 
       // Montar listas para o Dropdown de Filtros
-      const profsDropdown = resProfiles.data?.filter(p => p.role === 'PROFESSIONAL' || p.role === 'ADMIN') || [];
-      const patsDropdownApp = resProfiles.data?.filter(p => p.role === 'PATIENT').map(p => ({id: p.id, name: p.name + ' (App)'})) || [];
-      const patsDropdownFicha = resPatients.data?.map(p => ({id: p.id, name: p.name + ' (Ficha)'})) || [];
+      const profilesList = (resProfiles.data as any[] || []);
+      const patientsListRaw = (resPatients.data as any[] || []);
+
+      const profsDropdown = profilesList.filter(p => p.role === 'PROFESSIONAL' || p.role === 'ADMIN');
+      const patsDropdownApp = profilesList.filter(p => p.role === 'PATIENT').map(p => ({id: p.id, name: p.name + ' (App)'}));
+      const patsDropdownFicha = patientsListRaw.map(p => ({id: p.id, name: p.name + ' (Ficha)'}));
       
       const allPats = [...patsDropdownApp, ...patsDropdownFicha].sort((a, b) => a.name.localeCompare(b.name));
       
@@ -106,7 +121,7 @@ export const PatientAgenda: React.FC = () => {
           bookingsQuery = bookingsQuery.eq('professional_id', user.id);
         } else if (user?.role === UserRole.PATIENT) {
           appointmentsQuery = appointmentsQuery.eq('patient_id', user.id);
-          // Pacientes não veem room_bookings diretamente, mas mantemos a query segura
+          // Pacientes não veem room_bookings diretamente
           bookingsQuery = bookingsQuery.eq('id', '00000000-0000-0000-0000-000000000000'); 
         }
       }
@@ -121,13 +136,19 @@ export const PatientAgenda: React.FC = () => {
       // Helper para achar nome do paciente em QUALQUER tabela
       const findPatientName = (id?: string) => {
         if (!id) return 'Não informado';
-        if (patientMap.has(id)) return patientMap.get(id).name;
-        if (profileMap.has(id)) return profileMap.get(id).name;
-        return 'Paciente Desconhecido'; // ID existe mas não achou nome
+        
+        const patient = patientMap.get(id);
+        if (patient) return patient.name;
+        
+        const profile = profileMap.get(id);
+        if (profile) return profile.name;
+        
+        return 'Paciente Desconhecido';
       };
 
       const findProfName = (id: string) => {
-        if (profileMap.has(id)) return profileMap.get(id).name;
+        const prof = profileMap.get(id);
+        if (prof) return prof.name;
         return 'Profissional';
       };
 
@@ -197,17 +218,15 @@ export const PatientAgenda: React.FC = () => {
 
     try {
       if (item.source === 'room_booking') {
-        // Deletar reserva de sala
         const { error } = await supabase.from('room_bookings').delete().eq('id', item.id);
         if (error) throw error;
       } else {
-        // Cancelar agendamento (update status)
         const { error } = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', item.id);
         if (error) throw error;
       }
       
       alert('Cancelado com sucesso.');
-      loadAllData(); // Recarrega tudo
+      loadAllData(); 
     } catch (error: any) {
       console.error(error);
       alert('Erro ao cancelar: ' + (error.message || 'Verifique permissões.'));
@@ -220,7 +239,6 @@ export const PatientAgenda: React.FC = () => {
     return `${day}/${month}/${year}`;
   };
 
-  // Agrupar para exibição
   const groupedAppointments = filteredAppointments.reduce((acc, apt) => {
     const dateKey = apt.date;
     if (!acc[dateKey]) acc[dateKey] = [];
@@ -300,7 +318,6 @@ export const PatientAgenda: React.FC = () => {
         <div className="space-y-8">
           {Object.keys(groupedAppointments).map(dateKey => (
             <div key={dateKey} className="bg-white rounded-2xl shadow-sm border border-sakura/20 overflow-hidden">
-               {/* Cabeçalho da Data */}
                <div className="bg-bege/30 px-6 py-3 border-b border-sakura/10 flex items-center gap-2">
                  <CalendarIcon size={18} className="text-sakura-dark"/>
                  <h3 className="font-serif font-bold text-cinza-dark capitalize">
@@ -311,19 +328,17 @@ export const PatientAgenda: React.FC = () => {
                  </h3>
                </div>
                
-               {/* Lista de Agendamentos */}
                <div className="divide-y divide-bege">
                  {groupedAppointments[dateKey].map(apt => (
                    <div key={apt.id} className="p-4 hover:bg-bege/10 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
                       
-                      {/* 1. Horário e Status */}
                       <div className="flex items-center gap-4 min-w-[150px]">
                         <div className="flex flex-col items-center bg-white border border-bege-dark rounded-lg p-2 min-w-[70px]">
                            <span className="text-lg font-serif font-bold text-cinza-dark leading-none">{apt.start_time}</span>
                            <span className="text-[10px] text-cinza mt-1 flex items-center gap-0.5"><Clock size={8}/> 30m</span>
                         </div>
                         <div className="flex flex-col gap-1">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider w-fit
                             ${apt.status === 'cancelled' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-menta/20 text-menta-dark border-menta/30'}
                           `}>
                             {apt.status === 'cancelled' ? 'Cancelado' : 'Confirmado'}
@@ -334,9 +349,7 @@ export const PatientAgenda: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* 2. Detalhes Principais */}
                       <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
-                         {/* Paciente */}
                          <div className="flex items-center gap-2 text-sm text-cinza-dark">
                            <div className="w-8 h-8 rounded-full bg-sakura/20 flex items-center justify-center text-sakura-dark shrink-0">
                              <UserIcon size={16}/>
@@ -347,7 +360,6 @@ export const PatientAgenda: React.FC = () => {
                            </div>
                          </div>
                          
-                         {/* Local / Sala */}
                          {apt.room_name && (
                            <div className="flex items-center gap-2 text-sm text-cinza">
                              <div className="w-8 h-8 rounded-full bg-bege flex items-center justify-center text-cinza shrink-0">
@@ -360,7 +372,6 @@ export const PatientAgenda: React.FC = () => {
                            </div>
                          )}
 
-                         {/* Serviço / Tipo Agenda */}
                          <div className="flex items-center gap-2 text-sm text-cinza">
                            <div className="w-8 h-8 rounded-full bg-white border border-bege-dark flex items-center justify-center shrink-0" style={{borderColor: apt.service_color}}>
                              <div className="w-3 h-3 rounded-full" style={{backgroundColor: apt.service_color}}></div>
@@ -371,7 +382,6 @@ export const PatientAgenda: React.FC = () => {
                            </div>
                          </div>
 
-                         {/* Profissional (Visível para Admin) */}
                          {isAdmin && (
                             <div className="flex items-center gap-2 text-sm text-cinza lg:col-span-3 mt-2 pt-2 border-t border-bege/50">
                                <span className="text-xs font-bold uppercase text-cinza/60">Profissional Responsável:</span>
@@ -380,7 +390,6 @@ export const PatientAgenda: React.FC = () => {
                          )}
                       </div>
 
-                      {/* 3. Ações */}
                       <div className="flex justify-end">
                         {apt.status !== 'cancelled' && (isAdmin || user?.id === apt.professional_id) && (
                           <button 

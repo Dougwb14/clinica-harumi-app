@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { AgendaType } from '../types';
-import { Plus, Trash2, Edit2, X, Tag, DollarSign, Palette, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Tag, DollarSign, Palette, Loader2, Clock } from 'lucide-react';
 
 export const AgendaTypeManager: React.FC = () => {
   const [types, setTypes] = useState<AgendaType[]>([]);
@@ -53,10 +53,11 @@ export const AgendaTypeManager: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // FORÇA LÓGICA DE 30 MINUTOS (1 slot)
     const payload = {
       name: formData.name,
       price: parseFloat(formData.price || '0'),
-      duration_slots: 1, // FIXO: 1 slot = 30 min
+      duration_slots: 1, 
       color: formData.color
     };
 
@@ -88,7 +89,7 @@ export const AgendaTypeManager: React.FC = () => {
       <header className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-serif text-cinza-dark mb-2">Tipos de Agenda</h2>
-          <p className="text-cinza">Defina os serviços, valores e cores (Duração padrão: 30 min).</p>
+          <p className="text-cinza">Defina os serviços (Duração padrão: 30 min).</p>
         </div>
         <button 
           onClick={() => handleOpenModal()}
@@ -117,6 +118,10 @@ export const AgendaTypeManager: React.FC = () => {
 
                 <div className="space-y-2 mt-4">
                    <div className="flex items-center gap-2 text-sm text-cinza">
+                     <div className="w-6 h-6 rounded-full bg-bege flex items-center justify-center text-cinza-dark"><Clock size={14}/></div>
+                     <span className="font-medium">30 min</span>
+                   </div>
+                   <div className="flex items-center gap-2 text-sm text-cinza">
                      <div className="w-6 h-6 rounded-full bg-bege flex items-center justify-center text-cinza-dark"><DollarSign size={14}/></div>
                      <span className="font-medium">R$ {type.price.toFixed(2)}</span>
                    </div>
@@ -133,7 +138,7 @@ export const AgendaTypeManager: React.FC = () => {
           ))}
           {types.length === 0 && (
             <div className="col-span-full p-12 bg-white/50 border border-dashed border-sakura/30 rounded-2xl text-center text-cinza">
-              Nenhum tipo de agenda cadastrado. Clique em "Novo Tipo" para começar.
+              Nenhum tipo de agenda cadastrado.
             </div>
           )}
         </div>
@@ -149,45 +154,38 @@ export const AgendaTypeManager: React.FC = () => {
             </div>
             
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
-              
               <div className="space-y-1">
                 <label className="text-xs font-bold text-cinza uppercase">Tipo</label>
-                <div className="relative">
-                  <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-cinza/40" size={16} />
-                  <input 
-                    type="text" 
-                    required
-                    placeholder="Ex: Consulta Inicial"
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    className="w-full pl-10 pr-4 py-2 bg-bege/30 rounded-lg border border-bege-dark focus:border-sakura focus:ring-1 focus:ring-sakura outline-none text-cinza-dark"
-                  />
-                </div>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="Ex: Consulta Inicial"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  className="w-full p-3 bg-bege/30 rounded-lg border border-bege-dark outline-none"
+                />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-cinza uppercase">Valor</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-cinza/40 text-sm">R$</span>
-                  <input 
-                    type="number" 
-                    step="0.01"
-                    placeholder="0,00 (opcional)"
-                    value={formData.price}
-                    onChange={(e) => setFormData({...formData, price: e.target.value})}
-                    className="w-full pl-10 pr-4 py-2 bg-bege/30 rounded-lg border border-bege-dark focus:border-sakura focus:ring-1 focus:ring-sakura outline-none text-cinza-dark"
-                  />
-                </div>
+                <label className="text-xs font-bold text-cinza uppercase">Valor (R$)</label>
+                <input 
+                  type="number" 
+                  step="0.01"
+                  placeholder="0,00"
+                  value={formData.price}
+                  onChange={(e) => setFormData({...formData, price: e.target.value})}
+                  className="w-full p-3 bg-bege/30 rounded-lg border border-bege-dark outline-none"
+                />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-cinza uppercase">Cor</label>
-                <div className="flex items-center gap-2">
+                <label className="text-xs font-bold text-cinza uppercase">Cor de Identificação</label>
+                <div className="flex items-center gap-2 p-2 bg-bege/30 rounded-lg border border-bege-dark">
                   <input 
                     type="color" 
                     value={formData.color}
                     onChange={(e) => setFormData({...formData, color: e.target.value})}
-                    className="h-10 w-full cursor-pointer bg-transparent border-none rounded-lg"
+                    className="h-8 w-full cursor-pointer bg-transparent border-none"
                   />
                 </div>
               </div>
@@ -196,18 +194,17 @@ export const AgendaTypeManager: React.FC = () => {
                 <button 
                   type="button" 
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2 border border-bege-dark text-cinza rounded-xl hover:bg-bege transition-colors"
+                  className="flex-1 py-2 border border-bege-dark text-cinza rounded-xl hover:bg-bege"
                 >
                   Cancelar
                 </button>
                 <button 
                   type="submit" 
-                  className="flex-1 py-2 bg-menta text-white font-medium rounded-xl hover:bg-menta-dark transition-colors shadow-md"
+                  className="flex-1 py-2 bg-menta text-white font-medium rounded-xl hover:bg-menta-dark"
                 >
                   Salvar
                 </button>
               </div>
-
             </form>
           </div>
         </div>

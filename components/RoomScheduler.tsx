@@ -169,7 +169,7 @@ export const RoomScheduler: React.FC = () => {
   };
 
   const calculateEndTime = (startTime: string) => {
-    // Lógica EXATA: Adiciona 30 minutos ao horário de início
+    // LÓGICA DE 30 MINUTOS EXATA
     const [hour, min] = startTime.split(':').map(Number);
     const date = new Date();
     date.setHours(hour, min, 0, 0);
@@ -189,14 +189,11 @@ export const RoomScheduler: React.FC = () => {
         agenda_type_id: selectedAgendaTypeId || null,
         date: selectedDate,
         start_time: time,
-        end_time: calculateEndTime(time), // Garante 30 min
-        time_slot: time // Manter compatibilidade
+        end_time: calculateEndTime(time),
+        time_slot: time // Mantém compatibilidade com legado
       }));
 
-      const { error } = await supabase
-        .from('room_bookings')
-        .insert(bookingsToInsert);
-
+      const { error } = await supabase.from('room_bookings').insert(bookingsToInsert);
       if (error) throw error;
 
       alert('Reserva confirmada!');
@@ -212,15 +209,11 @@ export const RoomScheduler: React.FC = () => {
 
   const handleAdminCancel = async () => {
     if (!selectedBookingDetail) return;
-    if (!confirm('Tem certeza que deseja cancelar esta reserva? Essa ação não pode ser desfeita.')) return;
+    if (!confirm('Tem certeza que deseja cancelar esta reserva?')) return;
 
     setProcessing(true);
     try {
-      const { error } = await supabase
-        .from('room_bookings')
-        .delete()
-        .eq('id', selectedBookingDetail.id);
-
+      const { error } = await supabase.from('room_bookings').delete().eq('id', selectedBookingDetail.id);
       if (error) throw error;
       
       alert('Reserva cancelada.');
@@ -323,7 +316,7 @@ export const RoomScheduler: React.FC = () => {
                     key={time}
                     disabled={!canClick}
                     onClick={() => handleSlotClick(time)}
-                    title={isOccupied && isAdmin ? "Clique para gerenciar esta reserva" : ""}
+                    title={isOccupied && isAdmin ? "Clique para gerenciar" : ""}
                     className={`
                       py-2 rounded-lg text-sm font-medium transition-colors relative
                       ${isBlocked
