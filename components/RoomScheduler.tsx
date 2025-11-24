@@ -1,24 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
-import { MOCK_ROOMS, TIME_SLOTS } from '../constants';
-import { Patient } from '../types';
+import { TIME_SLOTS } from '../constants';
+import { Patient, Room } from '../types';
 import { Calendar, Clock, CheckCircle2, Users as UsersIcon, Loader2, AlertCircle, User as UserIcon } from 'lucide-react';
 
 export const RoomScheduler: React.FC = () => {
   const { user } = useAuth();
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [rooms, setRooms] = useState<Room[]>([]); // State for real rooms
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [roomsLoading, setRoomsLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   
   // Patient Selection Logic
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  useEffect(() => {
+    fetchRooms();
+  }, []);
 
   useEffect(() => {
     if (selectedRoom && selectedDate) {
@@ -35,6 +41,28 @@ export const RoomScheduler: React.FC = () => {
     fetchPatients();
   }, []);
 
+  const fetchRooms = async () => {
+    setRoomsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('*')
+        .order('name');
+      
+      if (error) throw error;
+      setRooms(data as Room[]);
+      
+      // Select first room by default if available
+      if (data && data.length > 0) {
+        // setSelectedRoom(data[0].id); // Optional: auto-select
+      }
+    } catch (error) {
+      console.error('Error fetching rooms:', error);
+    } finally {
+      setRoomsLoading(false);
+    }
+  };
+
   const fetchSlots = async () => {
     setLoading(true);
     setOccupiedSlots([]);
@@ -42,10 +70,9 @@ export const RoomScheduler: React.FC = () => {
     setSelectedSlots([]);
     
     try {
-      // Tenta buscar usando start_time (novo padrão)
-      const { data: bookings, error } = await supabase
+      const { data: bookings } = await supabase
         .from('room_bookings')
-        .select('start_time') // Se der erro aqui, o banco precisa ser atualizado
+        .select('start_time')
         .eq('room_id', selectedRoom)
         .eq('date', selectedDate);
 
@@ -94,7 +121,7 @@ export const RoomScheduler: React.FC = () => {
 
   const handleCloseModal = () => {
     setShowConfirmModal(false);
-    setSelectedPatientId(''); // Limpa o paciente ao cancelar/fechar
+    setSelectedPatientId('');
   };
 
   const confirmBooking = async () => {
@@ -105,7 +132,7 @@ export const RoomScheduler: React.FC = () => {
       const bookingsToInsert = selectedSlots.map(time => ({
         room_id: selectedRoom,
         professional_id: user.id,
-        patient_id: selectedPatientId || null, // Link Patient
+        patient_id: selectedPatientId || null,
         date: selectedDate,
         start_time: time,
         end_time: calculateEndTime(time)
@@ -122,10 +149,10 @@ export const RoomScheduler: React.FC = () => {
       fetchSlots(); 
     } catch (error: any) {
       console.error(error);
-      if (error.message?.includes('Could not find') || error.message?.includes('column')) {
-        alert('ERRO DE SISTEMA: O Banco de Dados precisa ser atualizado. Faltam as colunas start_time/end_time na tabela room_bookings.');
+      if (error.code === '22P02') {
+         alert('ERRO DE DADOS: O ID da sala é inválido. Recarregue a página.');
       } else {
-        alert('Erro ao reservar: ' + error.message);
+         alert('Erro ao reservar: ' + error.message);
       }
     } finally {
       setProcessing(false);
@@ -158,37 +185,46 @@ export const RoomScheduler: React.FC = () => {
       </header>
 
       {/* Room Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {MOCK_ROOMS.map((room) => (
-          <div 
-            key={room.id}
-            onClick={() => setSelectedRoom(room.id)}
-            className={`
-              relative overflow-hidden rounded-2xl cursor-pointer transition-all duration-300 border
-              ${selectedRoom === room.id 
-                ? 'border-menta ring-2 ring-menta/30 shadow-lg transform -translate-y-1' 
-                : 'border-white bg-white hover:border-sakura/50 hover:shadow-md'}
-            `}
-          >
-            <div className="h-32 bg-gray-200 w-full relative">
-               <img src={room.imageUrl} alt={room.name} className="w-full h-full object-cover" />
-               <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-               <h3 className="absolute bottom-3 left-4 text-white font-medium text-lg">{room.name}</h3>
-            </div>
-            <div className="p-4">
-              <div className="flex justify-between items-center text-sm text-cinza mb-2">
-                <span>{room.type}</span>
-                <span className="flex items-center gap-1"><UsersIcon size={14}/> {room.capacity}</span>
+      {roomsLoading ? (
+        <div className="flex justify-center p-12"><Loader2 className="animate-spin text-sakura" size={32}/></div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {rooms.map((room) => (
+            <div 
+              key={room.id}
+              onClick={() => setSelectedRoom(room.id)}
+              className={`
+                relative overflow-hidden rounded-2xl cursor-pointer transition-all duration-300 border
+                ${selectedRoom === room.id 
+                  ? 'border-menta ring-2 ring-menta/30 shadow-lg transform -translate-y-1' 
+                  : 'border-white bg-white hover:border-sakura/50 hover:shadow-md'}
+              `}
+            >
+              <div className="h-32 bg-gray-200 w-full relative">
+                 <img src={room.image_url || 'https://images.unsplash.com/photo-1519710164239-da123dc03ef4?ixlib=rb-4.0.3'} alt={room.name} className="w-full h-full object-cover" />
+                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+                 <h3 className="absolute bottom-3 left-4 text-white font-medium text-lg">{room.name}</h3>
               </div>
-              {selectedRoom === room.id && (
-                <div className="absolute top-2 right-2 bg-menta text-white p-1 rounded-full">
-                  <CheckCircle2 size={16} />
+              <div className="p-4">
+                <div className="flex justify-between items-center text-sm text-cinza mb-2">
+                  <span>{room.type}</span>
+                  <span className="flex items-center gap-1"><UsersIcon size={14}/> {room.capacity}</span>
                 </div>
-              )}
+                {selectedRoom === room.id && (
+                  <div className="absolute top-2 right-2 bg-menta text-white p-1 rounded-full">
+                    <CheckCircle2 size={16} />
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+          {rooms.length === 0 && (
+            <div className="col-span-3 text-center p-8 bg-white/50 border border-dashed border-sakura/30 rounded-2xl text-cinza">
+              Nenhuma sala encontrada no sistema. Contate o administrador.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Scheduler Grid */}
       {selectedRoom ? (
