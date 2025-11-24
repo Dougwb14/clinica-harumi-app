@@ -45,7 +45,7 @@ export const AgendaTypeManager: React.FC = () => {
       setFormData({
         name: '',
         price: '',
-        color: '#B5DAD7' // Cor padrão Menta
+        color: '#B5DAD7'
       });
     }
     setIsModalOpen(true);
@@ -56,7 +56,7 @@ export const AgendaTypeManager: React.FC = () => {
     const payload = {
       name: formData.name,
       price: parseFloat(formData.price || '0'),
-      duration_slots: 1, // Padrão fixo (1 slot de 30min), já que removemos a opção da UI
+      duration_slots: 1, // FIXO: 1 slot = 30 min
       color: formData.color
     };
 
@@ -88,7 +88,7 @@ export const AgendaTypeManager: React.FC = () => {
       <header className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-serif text-cinza-dark mb-2">Tipos de Agenda</h2>
-          <p className="text-cinza">Defina os serviços, valores e cores para o agendamento.</p>
+          <p className="text-cinza">Defina os serviços, valores e cores (Duração padrão: 30 min).</p>
         </div>
         <button 
           onClick={() => handleOpenModal()}
@@ -150,7 +150,6 @@ export const AgendaTypeManager: React.FC = () => {
             
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
               
-              {/* Campo Tipo (Descrição) */}
               <div className="space-y-1">
                 <label className="text-xs font-bold text-cinza uppercase">Tipo</label>
                 <div className="relative">
@@ -166,7 +165,6 @@ export const AgendaTypeManager: React.FC = () => {
                 </div>
               </div>
 
-              {/* Campo Valor */}
               <div className="space-y-1">
                 <label className="text-xs font-bold text-cinza uppercase">Valor</label>
                 <div className="relative">
@@ -182,7 +180,6 @@ export const AgendaTypeManager: React.FC = () => {
                 </div>
               </div>
 
-              {/* Campo Cor */}
               <div className="space-y-1">
                 <label className="text-xs font-bold text-cinza uppercase">Cor</label>
                 <div className="flex items-center gap-2">

@@ -9,7 +9,6 @@ export const RoomScheduler: React.FC = () => {
   const { user } = useAuth();
   
   const getLocalDate = () => {
-    // Retorna a data em string YYYY-MM-DD local sem converter para UTC
     const d = new Date();
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -20,28 +19,17 @@ export const RoomScheduler: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>(getLocalDate());
   const [rooms, setRooms] = useState<Room[]>([]); 
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
-  
-  // Selection State
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
-  
-  // Data State
   const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
   const [bookingsMap, setBookingsMap] = useState<Record<string, any>>({}); 
   const [blockedSlots, setBlockedSlots] = useState<string[]>([]);
-  
   const [loading, setLoading] = useState(false);
   const [roomsLoading, setRoomsLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
-  
-  // Dropdown Data
   const [patients, setPatients] = useState<Patient[]>([]);
   const [agendaTypes, setAgendaTypes] = useState<AgendaType[]>([]);
-  
-  // Form Selection
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [selectedAgendaTypeId, setSelectedAgendaTypeId] = useState<string>('');
-  
-  // Modals
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false); 
   const [selectedBookingDetail, setSelectedBookingDetail] = useState<any>(null); 
@@ -88,7 +76,6 @@ export const RoomScheduler: React.FC = () => {
     setSelectedSlots([]);
     
     try {
-      // Fetch Occupied Slots
       const { data: bookings } = await supabase
         .from('room_bookings')
         .select(`
@@ -108,7 +95,6 @@ export const RoomScheduler: React.FC = () => {
         const bMap: Record<string, any> = {};
 
         bookings.forEach((b: any) => {
-          // Normaliza horário para HH:MM
           const time = (b.start_time || b.time_slot || '').substring(0, 5);
           if (time) {
             occupied.push(time);
@@ -119,7 +105,6 @@ export const RoomScheduler: React.FC = () => {
         setBookingsMap(bMap);
       }
 
-      // Fetch Blocks
       const { data: blocks } = await supabase
         .from('schedule_blocks')
         .select('*')
@@ -183,6 +168,15 @@ export const RoomScheduler: React.FC = () => {
     setSelectedAgendaTypeId('');
   };
 
+  const calculateEndTime = (startTime: string) => {
+    // Lógica EXATA: Adiciona 30 minutos ao horário de início
+    const [hour, min] = startTime.split(':').map(Number);
+    const date = new Date();
+    date.setHours(hour, min, 0, 0);
+    date.setMinutes(date.getMinutes() + 30);
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  };
+
   const confirmBooking = async () => {
     if (!user || !selectedRoom) return;
     setProcessing(true);
@@ -195,8 +189,8 @@ export const RoomScheduler: React.FC = () => {
         agenda_type_id: selectedAgendaTypeId || null,
         date: selectedDate,
         start_time: time,
-        end_time: calculateEndTime(time),
-        time_slot: time 
+        end_time: calculateEndTime(time), // Garante 30 min
+        time_slot: time // Manter compatibilidade
       }));
 
       const { error } = await supabase
@@ -205,7 +199,7 @@ export const RoomScheduler: React.FC = () => {
 
       if (error) throw error;
 
-      alert('Reserva confirmada com sucesso!');
+      alert('Reserva confirmada!');
       handleCloseModal();
       fetchSlots(); 
     } catch (error: any) {
@@ -239,30 +233,18 @@ export const RoomScheduler: React.FC = () => {
     }
   };
 
-  const calculateEndTime = (startTime: string) => {
-    // Adiciona 30 minutos ao horário de início
-    const [hour, min] = startTime.split(':').map(Number);
-    const date = new Date();
-    date.setHours(hour, min, 0, 0);
-    date.setMinutes(date.getMinutes() + 30);
-    
-    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-  };
-
   const formatDisplayDate = (dateStr: string) => {
     if (!dateStr) return '';
     const [year, month, day] = dateStr.split('-');
     return `${day}/${month}/${year}`;
   };
 
-  const displayDate = formatDisplayDate(selectedDate);
-
   return (
     <div className="space-y-6 animate-fade-in relative">
       <header className="flex flex-col md:flex-row justify-between md:items-end gap-4">
         <div>
           <h2 className="text-3xl font-serif text-cinza-dark mb-2">Aluguel de Salas</h2>
-          <p className="text-cinza">Reserve um espaço para seus atendimentos.</p>
+          <p className="text-cinza">Reserve um espaço (slots de 30 min).</p>
         </div>
         <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl shadow-sm border border-sakura/30 text-cinza-dark self-start md:self-auto">
           <Calendar size={18} className="text-sakura-dark" />
@@ -275,7 +257,6 @@ export const RoomScheduler: React.FC = () => {
         </div>
       </header>
 
-      {/* Room Cards */}
       {roomsLoading ? (
         <div className="flex justify-center p-12"><Loader2 className="animate-spin text-sakura" size={32}/></div>
       ) : (
@@ -312,13 +293,12 @@ export const RoomScheduler: React.FC = () => {
         </div>
       )}
 
-      {/* Scheduler Grid */}
       {selectedRoom ? (
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-sakura/20 animate-slide-up">
           <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
              <h3 className="text-lg font-medium text-cinza-dark flex items-center gap-2">
                <Clock className="text-menta" size={20} />
-               Horários Disponíveis ({displayDate})
+               Horários Disponíveis ({formatDisplayDate(selectedDate)})
              </h3>
              <div className="flex items-center gap-4 text-sm flex-wrap">
                 <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-200"></div> Bloqueado</span>
@@ -336,7 +316,6 @@ export const RoomScheduler: React.FC = () => {
                 const isBlocked = blockedSlots.includes(time);
                 const isSelected = selectedSlots.includes(time);
                 
-                // Admin pode clicar se estiver ocupado para ver detalhes
                 const canClick = !isBlocked && (!isOccupied || isAdmin); 
                 
                 return (
@@ -388,7 +367,6 @@ export const RoomScheduler: React.FC = () => {
         </div>
       )}
 
-      {/* Confirm Booking Modal */}
       {showConfirmModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm animate-fade-in">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
@@ -397,10 +375,9 @@ export const RoomScheduler: React.FC = () => {
             </div>
             <div className="p-6 space-y-4">
               <p className="text-sm text-cinza">
-                Você selecionou <strong>{selectedSlots.length} horários</strong> em <strong>{displayDate}</strong>.
+                Você selecionou <strong>{selectedSlots.length} horários</strong> em <strong>{formatDisplayDate(selectedDate)}</strong>.
               </p>
               
-              {/* Seleção de Tipo de Agenda */}
               <div>
                 <label className="text-xs font-bold text-cinza uppercase mb-1 block">Tipo de Agenda</label>
                 <div className="relative">
@@ -418,7 +395,6 @@ export const RoomScheduler: React.FC = () => {
                 </div>
               </div>
 
-              {/* Seleção de Paciente */}
               <div>
                 <label className="text-xs font-bold text-cinza uppercase mb-1 block">Paciente (Opcional)</label>
                 <div className="relative">
@@ -456,7 +432,6 @@ export const RoomScheduler: React.FC = () => {
         </div>
       )}
 
-      {/* ADMIN DETAIL MODAL */}
       {showDetailModal && selectedBookingDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm animate-fade-in">
           <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden border border-red-100">

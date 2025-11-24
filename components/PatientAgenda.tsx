@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { Appointment, UserRole, User } from '../types';
-import { Calendar as CalendarIcon, Loader2, XCircle, RefreshCw, User as UserIcon, Filter, MapPin } from 'lucide-react';
+import { Calendar as CalendarIcon, Loader2, XCircle, RefreshCw, User as UserIcon, Filter, MapPin, Clock } from 'lucide-react';
 
 // Extended interface to handle both sources
 interface UnifiedAppointment extends Appointment {
@@ -45,7 +45,7 @@ export const PatientAgenda: React.FC = () => {
       // 1. Carregar Profissionais
       const { data: profs } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, name, email, role')
         .in('role', ['PROFESSIONAL', 'ADMIN']) 
         .order('name');
       
@@ -75,13 +75,15 @@ export const PatientAgenda: React.FC = () => {
         recordPatients.forEach(p => combinedPatients.push({ id: p.id, name: `${p.name} (Ficha)`, source: 'record' }));
       }
 
-      // Remove duplicates & sort
-      const uniquePatients = Array.from(new Map(combinedPatients.map(item => [item.id, item])).values());
+      // Remove duplicates based on ID
+      const uniquePatientsMap = new Map();
+      combinedPatients.forEach(p => uniquePatientsMap.set(p.id, p));
+      const uniquePatients = Array.from(uniquePatientsMap.values());
       uniquePatients.sort((a, b) => a.name.localeCompare(b.name));
       
       setPatientOptions(uniquePatients);
     } catch (err) {
-      console.error("Erro geral no dropdown:", err);
+      console.error("Erro ao carregar filtros:", err);
     }
   };
 
@@ -93,8 +95,9 @@ export const PatientAgenda: React.FC = () => {
       // ====================================================
       // QUERY 1: Agendamentos Diretos (Tabela appointments)
       // ====================================================
+      // Nota: Usamos sintaxe simplificada de relação para evitar erros de FK explícita
       let appQuery = supabase.from('appointments').select(`
-        *,
+        id, date, start_time, status, patient_id, professional_id, agenda_type_id,
         patient:patient_id(name),
         professional:professional_id(name),
         agenda_type:agenda_type_id(name, price, color)
@@ -106,7 +109,7 @@ export const PatientAgenda: React.FC = () => {
       let roomQuery = supabase.from('room_bookings').select(`
         id, date, start_time, status, patient_id, professional_id, agenda_type_id,
         patient:patient_id(name),
-        professional:profiles!professional_id(name),
+        professional:professional_id(name),
         agenda_type:agenda_type_id(name, price, color),
         room:room_id(name)
       `);
@@ -147,12 +150,13 @@ export const PatientAgenda: React.FC = () => {
           unifiedList.push({
             id: item.id,
             date: item.date,
-            start_time: item.start_time,
+            start_time: item.start_time?.substring(0, 5) || '00:00',
             status: item.status,
             patient_id: item.patient_id,
             professional_id: item.professional_id,
-            patient_name: item.patient?.name || 'Desconhecido',
-            professional_name: item.professional?.name || 'Desconhecido',
+            // Fallback seguro para nomes
+            patient_name: item.patient?.name || 'Paciente (App)',
+            professional_name: item.professional?.name || 'Profissional',
             agenda_type: item.agenda_type,
             source: 'appointment'
           });
@@ -165,12 +169,12 @@ export const PatientAgenda: React.FC = () => {
           unifiedList.push({
             id: item.id,
             date: item.date,
-            start_time: item.start_time,
-            status: 'scheduled', 
+            start_time: item.start_time?.substring(0, 5) || '00:00',
+            status: 'scheduled', // Reservas de sala nascem agendadas
             patient_id: item.patient_id,
             professional_id: item.professional_id,
-            patient_name: item.patient?.name || '(Sem Paciente)',
-            professional_name: item.professional?.name || 'Desconhecido',
+            patient_name: item.patient?.name || 'Não informado',
+            professional_name: item.professional?.name || 'Profissional',
             agenda_type: item.agenda_type,
             room_name: item.room?.name,
             source: 'room_booking'
@@ -198,9 +202,11 @@ export const PatientAgenda: React.FC = () => {
     
     try {
       if (item.source === 'room_booking') {
+        // Para reservas de sala, removemos o registro para liberar o horário
         const { error } = await supabase.from('room_bookings').delete().eq('id', item.id);
         if (error) throw error;
       } else {
+        // Para agendamentos, marcamos como cancelado
         const { error } = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', item.id);
         if (error) throw error;
       }
@@ -208,7 +214,8 @@ export const PatientAgenda: React.FC = () => {
       // Recarregar dados após cancelamento
       fetchData(); 
     } catch (error) {
-      alert('Erro ao cancelar.');
+      console.error(error);
+      alert('Erro ao cancelar. Verifique permissões.');
     }
   };
 
@@ -216,6 +223,14 @@ export const PatientAgenda: React.FC = () => {
     if (!dateStr) return '';
     const [year, month, day] = dateStr.split('-');
     return `${day}/${month}/${year}`;
+  };
+
+  // Helper para calcular fim (Start + 30min)
+  const calculateEndTime = (startTime: string) => {
+    const [h, m] = startTime.split(':').map(Number);
+    const d = new Date();
+    d.setHours(h, m + 30);
+    return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
   };
 
   // Agrupar por data para exibição
@@ -238,7 +253,7 @@ export const PatientAgenda: React.FC = () => {
           <h2 className="text-3xl font-serif text-cinza-dark mb-2">
             {user?.role === UserRole.PATIENT ? 'Meus Agendamentos' : 'Agenda Completa'}
           </h2>
-          <p className="text-cinza text-sm">Visualize e gerencie os atendimentos e reservas de sala.</p>
+          <p className="text-cinza text-sm">Visualização unificada de reservas e consultas (30 min).</p>
         </div>
         <button onClick={() => fetchData()} className="self-start md:self-auto p-2 text-cinza hover:bg-bege rounded-full transition-colors" title="Atualizar">
           <RefreshCw size={20} />
@@ -291,11 +306,11 @@ export const PatientAgenda: React.FC = () => {
       {loading ? (
         <div className="p-12 text-center flex flex-col items-center">
           <Loader2 className="animate-spin text-sakura mb-2" size={32}/>
-          <span className="text-cinza">Carregando dados unificados...</span>
+          <span className="text-cinza">Carregando agenda...</span>
         </div>
       ) : Object.keys(groupedAppointments).length === 0 ? (
         <div className="bg-white p-12 text-center text-cinza border border-dashed border-sakura/30 rounded-2xl">
-          Nenhum agendamento encontrado para os filtros selecionados.
+          Nenhum agendamento encontrado.
         </div>
       ) : (
         <div className="space-y-8">
@@ -313,8 +328,11 @@ export const PatientAgenda: React.FC = () => {
                    <div key={apt.id} className="p-4 hover:bg-bege/10 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
                       
                       {/* Left: Time & Status */}
-                      <div className="flex items-center gap-4 min-w-[140px]">
-                        <span className="text-xl font-serif font-bold text-cinza-dark">{apt.start_time.substring(0, 5)}</span>
+                      <div className="flex items-center gap-4 min-w-[160px]">
+                        <div className="flex flex-col items-center bg-white border border-bege-dark rounded-lg p-2 min-w-[80px]">
+                           <span className="text-lg font-serif font-bold text-cinza-dark">{apt.start_time}</span>
+                           <span className="text-xs text-cinza/60 flex items-center gap-1"><Clock size={10}/> +30min</span>
+                        </div>
                         <div className="flex flex-col items-start gap-1">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium border
                             ${apt.status === 'scheduled' ? 'bg-menta/20 text-menta-dark border-menta/30' : 
@@ -335,7 +353,7 @@ export const PatientAgenda: React.FC = () => {
                          <div className="flex items-center gap-2 text-sm text-cinza-dark">
                            <UserIcon size={16} className="text-sakura-dark shrink-0"/>
                            <div className="flex flex-col">
-                             <span className="font-bold">{apt.patient_name || 'Paciente não vinculado'}</span>
+                             <span className="font-bold">{apt.patient_name}</span>
                              {user?.role === UserRole.PATIENT && <span className="text-xs text-cinza">Profissional: {apt.professional_name}</span>}
                            </div>
                          </div>
@@ -370,15 +388,15 @@ export const PatientAgenda: React.FC = () => {
                       </div>
 
                       {/* Right: Actions */}
-                      <div className="flex justify-end">
+                      <div className="flex justify-end items-center">
                         {apt.status !== 'cancelled' && (isAdmin || user?.id === apt.professional_id) && (
                           <button 
                             onClick={() => handleCancel(apt)}
                             className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors text-xs flex items-center gap-1 border border-transparent hover:border-red-200"
                             title="Cancelar Agendamento"
                           >
-                            <XCircle size={16} /> 
-                            Cancelar
+                            <XCircle size={18} /> 
+                            <span className="hidden md:inline">Cancelar</span>
                           </button>
                         )}
                       </div>

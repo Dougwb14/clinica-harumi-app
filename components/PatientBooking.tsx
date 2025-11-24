@@ -185,7 +185,7 @@ export const PatientBooking: React.FC = () => {
                 <div className="space-y-1 text-sm text-cinza">
                    <div className="flex items-center gap-2">
                      <Clock size={14}/>
-                     <span>Duração: {type.duration_slots}h</span>
+                     <span>Duração: 30 min</span>
                    </div>
                    <div className="flex items-center gap-2">
                      <DollarSign size={14}/>
