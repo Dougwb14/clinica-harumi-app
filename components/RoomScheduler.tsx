@@ -72,12 +72,13 @@ export const RoomScheduler: React.FC = () => {
     try {
       const { data: bookings } = await supabase
         .from('room_bookings')
-        .select('start_time')
+        .select('start_time, time_slot') // Fetch both to be safe
         .eq('room_id', selectedRoom)
         .eq('date', selectedDate);
 
       if (bookings) {
-        setOccupiedSlots(bookings.map((b: any) => b.start_time));
+        // Support both old 'time_slot' and new 'start_time'
+        setOccupiedSlots(bookings.map((b: any) => b.start_time || b.time_slot));
       }
 
       const { data: blocks } = await supabase
@@ -135,7 +136,8 @@ export const RoomScheduler: React.FC = () => {
         patient_id: selectedPatientId || null,
         date: selectedDate,
         start_time: time,
-        end_time: calculateEndTime(time)
+        end_time: calculateEndTime(time),
+        time_slot: time // <--- CORREÇÃO: Enviando também para a coluna antiga para satisfazer o banco
       }));
 
       const { error } = await supabase
