@@ -1,6 +1,6 @@
 export enum UserRole {
   ADMIN = 'ADMIN',
-  PROFESSIONAL = 'PROFESSIONAL', // Psychologist or Nutritionist
+  PROFESSIONAL = 'PROFESSIONAL',
   PATIENT = 'PATIENT'
 }
 
@@ -15,8 +15,8 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
-  avatarUrl?: string;
-  specialty?: string; // e.g., "Psicologia Clínica", "Nutrição Esportiva"
+  avatar_url?: string;
+  specialty?: string;
 }
 
 export interface Room {
@@ -24,34 +24,26 @@ export interface Room {
   name: string;
   type: RoomType;
   capacity: number;
-  imageUrl?: string;
+  image_url?: string;
 }
 
-// A booking of a physical room by a professional
 export interface RoomBooking {
   id: string;
-  roomId: string;
-  professionalId: string;
-  startTime: string; // ISO String
-  endTime: string; // ISO String
-  date: string; // YYYY-MM-DD
+  room_id: string;
+  professional_id: string;
+  start_time: string;
+  end_time: string;
+  date: string;
 }
 
-// An appointment between a professional and a patient
 export interface Appointment {
   id: string;
-  patientName: string;
-  professionalId: string;
-  roomId: string; // Linked to a room booking usually, or virtual
-  startTime: string; // ISO String
-  endTime: string; // ISO String
-  status: 'scheduled' | 'completed' | 'cancelled' | 'blocked';
-  notes?: string;
-}
-
-export interface Notification {
-  id: string;
-  message: string;
-  read: boolean;
+  patient_id: string;
+  professional_id: string;
+  professional_name?: string; // Join field
+  patient_name?: string;     // Join field
   date: string;
+  start_time: string;
+  status: 'scheduled' | 'completed' | 'cancelled';
+  notes?: string;
 }

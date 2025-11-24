@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Calendar, Users, DoorOpen, Settings, LogOut, Flower2, Briefcase } from 'lucide-react';
+import { LayoutDashboard, Calendar, Users, DoorOpen, Settings, LogOut, Flower2, Briefcase, CalendarPlus } from 'lucide-react';
 import { UserRole } from '../types';
 
 interface SidebarProps {
@@ -10,16 +10,24 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, onLogout }) => {
-  const menuItems = [
-    { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
-    { id: 'schedule', label: 'Minha Agenda', icon: Calendar },
-    { id: 'rooms', label: 'Aluguel de Salas', icon: DoorOpen },
-  ];
+  const menuItems = [];
+
+  // Common items or Role based items
+  if (userRole === UserRole.ADMIN || userRole === UserRole.PROFESSIONAL) {
+    menuItems.push({ id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard });
+    menuItems.push({ id: 'schedule', label: 'Minha Agenda', icon: Calendar });
+    menuItems.push({ id: 'rooms', label: 'Aluguel de Salas', icon: DoorOpen });
+  }
 
   if (userRole === UserRole.ADMIN) {
-    menuItems.push({ id: 'patients', label: 'Pacientes', icon: Users });
     menuItems.push({ id: 'professionals', label: 'Profissionais', icon: Briefcase });
     menuItems.push({ id: 'settings', label: 'Configurações', icon: Settings });
+  }
+
+  if (userRole === UserRole.PATIENT) {
+    menuItems.push({ id: 'patient_booking', label: 'Agendar Consulta', icon: CalendarPlus });
+    menuItems.push({ id: 'schedule', label: 'Meus Agendamentos', icon: Calendar });
+    menuItems.push({ id: 'settings', label: 'Meu Perfil', icon: Settings });
   }
 
   return (

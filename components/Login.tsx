@@ -1,25 +1,54 @@
 import React, { useState } from 'react';
-import { Flower2, Lock, Mail, ArrowRight } from 'lucide-react';
-import { UserRole } from '../types';
+import { supabase } from '../lib/supabaseClient';
+import { Flower2, Lock, Mail, ArrowRight, Loader2 } from 'lucide-react';
 
-interface LoginProps {
-  onLogin: (role: UserRole) => void;
-}
-
-export const Login: React.FC<LoginProps> = ({ onLogin }) => {
+export const Login: React.FC = () => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<UserRole>(UserRole.ADMIN); // Default for demo
+  
+  // Registration fields
+  const [name, setName] = useState('');
+  const [isProfessional, setIsProfessional] = useState(false); // Checkbox for signup
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate login
-    onLogin(role);
+    setLoading(true);
+    try {
+      if (isLogin) {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+        if (error) throw error;
+      } else {
+        // Sign Up Logic
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              name: name,
+              role: isProfessional ? 'PROFESSIONAL' : 'PATIENT',
+              specialty: isProfessional ? 'Psicologia' : null // Default
+            }
+          }
+        });
+        if (error) throw error;
+        alert('Cadastro realizado! Verifique seu e-mail ou faça login.');
+        setIsLogin(true);
+      }
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bege p-4">
-      <div className="bg-white w-full max-w-4xl rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row">
+      <div className="bg-white w-full max-w-4xl rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row animate-fade-in">
         
         {/* Left Side - Brand */}
         <div className="w-full md:w-1/2 bg-gradient-to-br from-sakura via-sakura-light to-white p-12 flex flex-col justify-between relative overflow-hidden">
@@ -33,21 +62,28 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
              <h1 className="font-serif text-4xl text-cinza-dark mb-2">Clínica <br/> <span className="text-sakura-dark font-semibold">HARUMI</span></h1>
              <p className="text-cinza-dark/80 mt-4 text-lg italic">"Cuidar de si é florescer."</p>
            </div>
-
-           <div className="relative z-10 hidden md:block">
-             <div className="flex gap-2">
-               <div className="w-8 h-2 bg-menta rounded-full"></div>
-               <div className="w-8 h-2 bg-sakura rounded-full"></div>
-               <div className="w-8 h-2 bg-bege-dark rounded-full"></div>
-             </div>
-           </div>
         </div>
 
         {/* Right Side - Form */}
         <div className="w-full md:w-1/2 p-12 bg-white flex flex-col justify-center">
-          <h2 className="text-2xl font-semibold text-cinza-dark mb-8">Acesse sua conta</h2>
+          <h2 className="text-2xl font-semibold text-cinza-dark mb-8">
+            {isLogin ? 'Acesse sua conta' : 'Crie sua conta'}
+          </h2>
           
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleAuth} className="space-y-4">
+            {!isLogin && (
+              <div className="space-y-2 animate-slide-up">
+                <label className="text-sm font-medium text-cinza">Nome Completo</label>
+                <input 
+                  type="text" 
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-4 py-3 bg-bege/30 border border-bege-dark rounded-xl focus:outline-none focus:border-sakura focus:ring-1 focus:ring-sakura text-cinza-dark"
+                  required
+                />
+              </div>
+            )}
+
             <div className="space-y-2">
               <label className="text-sm font-medium text-cinza">E-mail</label>
               <div className="relative">
@@ -78,31 +114,37 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-sm">
-               <label className="flex items-center gap-2 cursor-pointer text-cinza">
-                 <input type="checkbox" className="rounded border-gray-300 text-sakura focus:ring-sakura" />
-                 Lembrar de mim
-               </label>
-               <a href="#" className="text-menta-dark hover:underline">Esqueceu a senha?</a>
-            </div>
-
-            {/* Role Switcher Demo */}
-            <div className="flex gap-4 mb-4 text-xs">
-              <button type="button" onClick={() => setRole(UserRole.ADMIN)} className={`px-2 py-1 rounded ${role === UserRole.ADMIN ? 'bg-sakura text-white' : 'bg-gray-100'}`}>Admin Demo</button>
-              <button type="button" onClick={() => setRole(UserRole.PROFESSIONAL)} className={`px-2 py-1 rounded ${role === UserRole.PROFESSIONAL ? 'bg-menta text-white' : 'bg-gray-100'}`}>Profissional Demo</button>
-            </div>
+            {!isLogin && (
+               <div className="flex items-center gap-2 mt-4 animate-slide-up">
+                 <input 
+                  type="checkbox" 
+                  id="isProf"
+                  checked={isProfessional}
+                  onChange={(e) => setIsProfessional(e.target.checked)}
+                  className="rounded text-sakura focus:ring-sakura"
+                 />
+                 <label htmlFor="isProf" className="text-sm text-cinza">Sou um profissional (Psicólogo/Nutricionista)</label>
+               </div>
+            )}
 
             <button 
               type="submit" 
-              className="w-full bg-cinza-dark text-white py-3 rounded-xl font-medium shadow-lg hover:shadow-xl hover:bg-black transition-all flex items-center justify-center gap-2 group"
+              disabled={loading}
+              className="w-full mt-4 bg-cinza-dark text-white py-3 rounded-xl font-medium shadow-lg hover:shadow-xl hover:bg-black transition-all flex items-center justify-center gap-2 group disabled:opacity-50"
             >
-              Entrar
-              <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+              {loading ? <Loader2 className="animate-spin" /> : (isLogin ? 'Entrar' : 'Cadastrar')}
+              {!loading && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
             </button>
           </form>
 
           <p className="mt-8 text-center text-sm text-cinza">
-            Não tem uma conta? <a href="#" className="text-sakura-dark font-semibold hover:underline">Cadastre-se</a>
+            {isLogin ? 'Não tem uma conta?' : 'Já tem uma conta?'} 
+            <button 
+              onClick={() => setIsLogin(!isLogin)} 
+              className="ml-2 text-sakura-dark font-semibold hover:underline"
+            >
+              {isLogin ? 'Cadastre-se' : 'Faça Login'}
+            </button>
           </p>
         </div>
       </div>
