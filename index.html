@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clínica Harumi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              sakura: {
+                DEFAULT: '#FADADD',
+                dark: '#E8C1C4', // Slightly darker for hover/borders
+                light: '#FFF0F2'
+              },
+              menta: {
+                DEFAULT: '#B5DAD7',
+                dark: '#9BCBC7',
+                light: '#E0F2F1'
+              },
+              bege: {
+                DEFAULT: '#F6EFEF',
+                dark: '#EBE0E0'
+              },
+              cinza: {
+                DEFAULT: '#8C8C8C',
+                dark: '#6B6B6B',
+                light: '#D4D4D4'
+              }
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              serif: ['Playfair Display', 'serif'], // Suggesting a serif for headers to match "Harumi" style
+            }
+          }
+        }
+      }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    <style>
+      body {
+        background-color: #F6EFEF; /* Beige Suave */
+        color: #6B6B6B; /* Cinza Darker for text readability */
+      }
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #F6EFEF; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #B5DAD7; 
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #8C8C8C; 
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "recharts": "https://aistudiocdn.com/recharts@^3.5.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
