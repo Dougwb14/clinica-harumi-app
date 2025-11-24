@@ -1,86 +1,123 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
-import { Appointment, UserRole, User, Patient } from '../types';
-import { Calendar as CalendarIcon, Loader2, XCircle, RefreshCw, Tag, User as UserIcon, Filter } from 'lucide-react';
+import { Appointment, UserRole, User } from '../types';
+import { Calendar as CalendarIcon, Loader2, XCircle, RefreshCw, User as UserIcon, Filter, MapPin } from 'lucide-react';
+
+interface UnifiedAppointment extends Appointment {
+  source: 'appointment' | 'room_booking';
+  room_name?: string;
+}
 
 export const PatientAgenda: React.FC = () => {
   const { user } = useAuth();
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [appointments, setAppointments] = useState<UnifiedAppointment[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
   const [filterProfessional, setFilterProfessional] = useState('');
-  const [filterPatient, setFilterPatient] = useState('');
   
   // Dropdown data
   const [professionals, setProfessionals] = useState<User[]>([]);
-  const [patients, setPatients] = useState<Patient[]>([]);
 
   const isAdmin = user?.role === UserRole.ADMIN;
 
   useEffect(() => {
     if (user) {
-      fetchAppointments();
-      if (isAdmin) {
-        fetchDropdowns();
-      }
+      if (isAdmin) fetchDropdowns();
+      fetchData();
     }
-  }, [user]);
-
-  // Refetch when filters change
-  useEffect(() => {
-    fetchAppointments();
-  }, [filterProfessional, filterPatient]);
+  }, [user, filterProfessional]);
 
   const fetchDropdowns = async () => {
-    const { data: profs } = await supabase.from('profiles').select('*').eq('role', 'PROFESSIONAL');
-    if (profs) setProfessionals(profs as any);
-
-    const { data: pats } = await supabase.from('patients').select('id, name');
-    if (pats) setPatients(pats as any);
+    try {
+      const { data: profs } = await supabase.from('profiles').select('*').in('role', ['PROFESSIONAL', 'ADMIN']);
+      if (profs) setProfessionals(profs as any);
+    } catch(e) { console.error(e); }
   };
 
-  const fetchAppointments = async () => {
+  const fetchData = async () => {
     setLoading(true);
     try {
-      let query = supabase.from('appointments').select(`
+      const unifiedList: UnifiedAppointment[] = [];
+
+      // 1. Fetch APPOINTMENTS
+      let appQuery = supabase.from('appointments').select(`
         *,
         patient:patient_id(name),
         professional:professional_id(name),
         agenda_type:agenda_type_id(name, price, color)
-      `).order('date', { ascending: true }).order('start_time', { ascending: true });
+      `);
 
-      // Permission Logic
-      if (user?.role === UserRole.PATIENT) {
-        query = query.eq('patient_id', user.id);
-      } else if (user?.role === UserRole.PROFESSIONAL) {
-        query = query.eq('professional_id', user.id);
-      }
-      
-      // Admin Filters
-      if (isAdmin) {
-        if (filterProfessional) query = query.eq('professional_id', filterProfessional);
-        if (filterPatient) query = query.eq('patient_id', filterPatient);
+      // 2. Fetch ROOM BOOKINGS
+      let roomQuery = supabase.from('room_bookings').select(`
+        id, date, start_time, status, patient_id, professional_id, agenda_type_id,
+        patient:patient_id(name),
+        professional:profiles!professional_id(name),
+        agenda_type:agenda_type_id(name, price, color),
+        room:room_id(name)
+      `);
+
+      // Filters
+      if (!isAdmin) {
+        if (user?.role === UserRole.PROFESSIONAL) {
+          appQuery = appQuery.eq('professional_id', user.id);
+          roomQuery = roomQuery.eq('professional_id', user.id);
+        } else if (user?.role === UserRole.PATIENT) {
+          appQuery = appQuery.eq('patient_id', user.id);
+          roomQuery = roomQuery.eq('patient_id', user.id);
+        }
+      } else {
+        if (filterProfessional) {
+          appQuery = appQuery.eq('professional_id', filterProfessional);
+          roomQuery = roomQuery.eq('professional_id', filterProfessional);
+        }
       }
 
-      const { data, error } = await query;
-      
-      if (error) throw error;
-      
-      const mapped: Appointment[] = data.map((apt: any) => ({
-        id: apt.id,
-        date: apt.date,
-        start_time: apt.start_time,
-        status: apt.status,
-        patient_id: apt.patient_id,
-        professional_id: apt.professional_id,
-        patient_name: apt.patient?.name,
-        professional_name: apt.professional?.name,
-        agenda_type: apt.agenda_type
-      }));
-      
-      setAppointments(mapped);
+      const [appRes, roomRes] = await Promise.all([appQuery, roomQuery]);
+
+      if (appRes.data) {
+        appRes.data.forEach((item: any) => {
+          unifiedList.push({
+            id: item.id,
+            date: item.date,
+            start_time: item.start_time,
+            status: item.status,
+            patient_id: item.patient_id,
+            professional_id: item.professional_id,
+            patient_name: item.patient?.name,
+            professional_name: item.professional?.name,
+            agenda_type: item.agenda_type,
+            source: 'appointment'
+          });
+        });
+      }
+
+      if (roomRes.data) {
+        roomRes.data.forEach((item: any) => {
+          unifiedList.push({
+            id: item.id,
+            date: item.date,
+            start_time: item.start_time,
+            status: 'scheduled', 
+            patient_id: item.patient_id,
+            professional_id: item.professional_id,
+            patient_name: item.patient?.name || '(Sem Paciente)',
+            professional_name: item.professional?.name,
+            agenda_type: item.agenda_type,
+            room_name: item.room?.name,
+            source: 'room_booking'
+          });
+        });
+      }
+
+      unifiedList.sort((a, b) => {
+        const da = new Date(`${a.date}T${a.start_time}`);
+        const db = new Date(`${b.date}T${b.start_time}`);
+        return da.getTime() - db.getTime();
+      });
+
+      setAppointments(unifiedList);
     } catch (error) {
       console.error(error);
     } finally {
@@ -88,91 +125,60 @@ export const PatientAgenda: React.FC = () => {
     }
   };
 
-  const handleCancel = async (id: string) => {
-    if (!confirm('Tem certeza que deseja cancelar este agendamento?')) return;
-    
+  const handleCancel = async (item: UnifiedAppointment) => {
+    if (!confirm('Cancelar este agendamento?')) return;
     try {
-      const { error } = await supabase
-        .from('appointments')
-        .update({ status: 'cancelled' })
-        .eq('id', id);
-
-      if (error) throw error;
-      
-      fetchAppointments(); 
-    } catch (error) {
-      alert('Erro ao cancelar.');
-    }
+      if (item.source === 'room_booking') {
+        await supabase.from('room_bookings').delete().eq('id', item.id);
+      } else {
+        await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', item.id);
+      }
+      fetchData(); 
+    } catch (error) { alert('Erro ao cancelar.'); }
   };
 
   const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
     const [year, month, day] = dateStr.split('-');
     return `${day}/${month}/${year}`;
   };
 
-  // Group by date for better visualization
   const groupedAppointments = appointments.reduce((acc, apt) => {
     const dateKey = apt.date;
     if (!acc[dateKey]) acc[dateKey] = [];
     acc[dateKey].push(apt);
     return acc;
-  }, {} as Record<string, Appointment[]>);
+  }, {} as Record<string, UnifiedAppointment[]>);
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <header className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+      <header className="flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-serif text-cinza-dark mb-2">
-            {user?.role === UserRole.PATIENT ? 'Meus Agendamentos' : 'Agenda Completa'}
-          </h2>
-          <p className="text-cinza text-sm">Visualize e gerencie os atendimentos.</p>
+          <h2 className="text-3xl font-serif text-cinza-dark mb-2">Agenda Completa</h2>
+          <p className="text-cinza">Visão unificada.</p>
         </div>
-        <button onClick={() => fetchAppointments()} className="self-start md:self-auto p-2 text-cinza hover:bg-bege rounded-full transition-colors" title="Atualizar">
-          <RefreshCw size={20} />
-        </button>
+        <button onClick={() => fetchData()} className="p-2 text-cinza hover:bg-bege rounded-full"><RefreshCw size={20}/></button>
       </header>
 
-      {/* Filters for Admin */}
       {isAdmin && (
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-sakura/20 flex flex-wrap gap-4 items-end">
-           <div className="flex items-center gap-2 text-cinza-dark font-medium mr-2">
-             <Filter size={18} /> Filtros:
-           </div>
-           
-           <div className="flex-1 min-w-[200px]">
-             <label className="block text-xs font-bold text-cinza uppercase mb-1">Profissional</label>
-             <select 
-               value={filterProfessional} 
-               onChange={(e) => setFilterProfessional(e.target.value)}
-               className="w-full p-2 bg-bege/30 rounded-lg border border-bege-dark text-sm"
-             >
-               <option value="">Todos</option>
-               {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-             </select>
-           </div>
-
-           <div className="flex-1 min-w-[200px]">
-             <label className="block text-xs font-bold text-cinza uppercase mb-1">Paciente</label>
-             <select 
-               value={filterPatient} 
-               onChange={(e) => setFilterPatient(e.target.value)}
-               className="w-full p-2 bg-bege/30 rounded-lg border border-bege-dark text-sm"
-             >
-               <option value="">Todos</option>
-               {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-             </select>
-           </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-sakura/20 flex gap-4 items-center">
+           <Filter size={18} className="text-cinza"/>
+           <select 
+             value={filterProfessional} 
+             onChange={(e) => setFilterProfessional(e.target.value)}
+             className="flex-1 p-2 bg-bege/30 rounded-lg border border-bege-dark text-sm"
+           >
+             <option value="">Todos os Profissionais</option>
+             {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+           </select>
         </div>
       )}
 
       {loading ? (
-        <div className="p-12 text-center flex flex-col items-center">
-          <Loader2 className="animate-spin text-sakura mb-2" size={32}/>
-          <span className="text-cinza">Carregando agenda...</span>
-        </div>
+        <div className="p-12 text-center"><Loader2 className="animate-spin mx-auto text-sakura"/></div>
       ) : Object.keys(groupedAppointments).length === 0 ? (
-        <div className="bg-white p-12 text-center text-cinza border border-dashed border-sakura/30 rounded-2xl">
-          Nenhum agendamento encontrado para os filtros selecionados.
+        <div className="bg-white p-12 text-center text-cinza rounded-2xl border border-dashed border-sakura/30">
+          Nada agendado.
         </div>
       ) : (
         <div className="space-y-6">
@@ -180,62 +186,24 @@ export const PatientAgenda: React.FC = () => {
             <div key={dateKey} className="bg-white rounded-2xl shadow-sm border border-sakura/20 overflow-hidden">
                <div className="bg-bege/30 px-6 py-3 border-b border-sakura/10 flex items-center gap-2">
                  <CalendarIcon size={18} className="text-sakura-dark"/>
-                 <h3 className="font-serif font-bold text-cinza-dark">{formatDate(dateKey)}</h3>
+                 <h3 className="font-bold text-cinza-dark">{formatDate(dateKey)}</h3>
                </div>
-               
                <div className="divide-y divide-bege">
                  {groupedAppointments[dateKey].map(apt => (
-                   <div key={apt.id} className="p-4 hover:bg-bege/10 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      
-                      {/* Time and Status */}
-                      <div className="flex items-center gap-4 min-w-[140px]">
-                        <span className="text-lg font-bold text-cinza-dark">{apt.start_time}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border
-                          ${apt.status === 'scheduled' ? 'bg-blue-50 text-blue-700 border-blue-100' : 
-                            apt.status === 'cancelled' ? 'bg-red-50 text-red-700 border-red-100' : 
-                            'bg-gray-100 text-gray-800 border-gray-200'}
-                        `}>
-                          {apt.status === 'scheduled' ? 'Agendado' : apt.status === 'cancelled' ? 'Cancelado' : apt.status}
-                        </span>
+                   <div key={apt.id} className="p-4 flex items-center justify-between hover:bg-bege/10">
+                      <div className="flex gap-4 items-center">
+                        <span className="font-bold text-lg text-cinza-dark">{apt.start_time.substring(0,5)}</span>
+                        <div>
+                           <p className="font-bold text-cinza-dark">{apt.patient_name || 'Sem Paciente'}</p>
+                           <p className="text-xs text-cinza">Prof: {apt.professional_name} {apt.room_name && `• ${apt.room_name}`}</p>
+                        </div>
                       </div>
-
-                      {/* Info */}
-                      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-2">
-                         <div className="flex items-center gap-2 text-sm text-cinza-dark">
-                           <UserIcon size={16} className="text-menta-dark"/>
-                           <span className="font-medium">
-                             {user?.role === UserRole.PATIENT ? apt.professional_name : apt.patient_name}
-                           </span>
-                           {isAdmin && <span className="text-xs text-cinza">({user?.role === UserRole.PATIENT ? 'Profissional' : 'Paciente'})</span>}
-                         </div>
-                         
-                         {isAdmin && (
-                            <div className="flex items-center gap-2 text-sm text-cinza">
-                               <span className="text-xs font-bold uppercase text-cinza/50">Prof:</span>
-                               {apt.professional_name}
-                            </div>
-                         )}
-                         
-                         <div className="flex items-center gap-2">
-                           {apt.agenda_type && (
-                             <>
-                               <span className="w-2 h-2 rounded-full" style={{backgroundColor: apt.agenda_type.color}}></span>
-                               <span className="text-sm text-cinza">{apt.agenda_type.name}</span>
-                             </>
-                           )}
-                         </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex justify-end">
-                        {apt.status === 'scheduled' && (isAdmin || user?.id === apt.patient_id || user?.id === apt.professional_id) && (
-                          <button 
-                            onClick={() => handleCancel(apt.id)}
-                            className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors text-xs flex items-center gap-1"
-                          >
-                            <XCircle size={14} /> 
-                            Cancelar
-                          </button>
+                      <div className="flex items-center gap-4">
+                        {apt.agenda_type && (
+                          <span className="text-xs px-2 py-1 rounded bg-gray-100 border border-gray-200">{apt.agenda_type.name}</span>
+                        )}
+                        {(isAdmin || user?.id === apt.professional_id) && apt.status !== 'cancelled' && (
+                          <button onClick={() => handleCancel(apt)} className="text-red-400 hover:text-red-600"><XCircle size={18}/></button>
                         )}
                       </div>
                    </div>
