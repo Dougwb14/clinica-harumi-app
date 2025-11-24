@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { Appointment, UserRole, User } from '../types';
-import { Calendar as CalendarIcon, Loader2, XCircle, RefreshCw, User as UserIcon, Filter, MapPin, Clock } from 'lucide-react';
+import { Calendar as CalendarIcon, Loader2, XCircle, RefreshCw, User as UserIcon, Filter, MapPin, Clock, AlertCircle } from 'lucide-react';
 
-// Extended interface to handle both sources
 interface UnifiedAppointment extends Appointment {
   source: 'appointment' | 'room_booking';
   room_name?: string;
@@ -21,7 +20,7 @@ export const PatientAgenda: React.FC = () => {
   const [appointments, setAppointments] = useState<UnifiedAppointment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Filters State
+  // Filters
   const [filterProfessional, setFilterProfessional] = useState('');
   const [filterPatient, setFilterPatient] = useState('');
   
@@ -33,58 +32,40 @@ export const PatientAgenda: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      if (isAdmin) {
-        fetchDropdowns();
-      }
+      if (isAdmin) fetchDropdowns();
       fetchData();
     }
   }, [user, filterProfessional, filterPatient]);
 
   const fetchDropdowns = async () => {
     try {
-      // 1. Carregar Profissionais
+      // Profissionais
       const { data: profs } = await supabase
         .from('profiles')
-        .select('id, name, email, role')
-        .in('role', ['PROFESSIONAL', 'ADMIN']) 
+        .select('id, name, role')
+        .in('role', ['PROFESSIONAL', 'ADMIN'])
         .order('name');
-      
       if (profs) setProfessionals(profs as any);
 
-      // 2. Carregar Pacientes (Unificado)
+      // Pacientes Unificados
       const combinedPatients: PatientOption[] = [];
-
-      // 2a. App Users
-      const { data: profilePatients } = await supabase
+      
+      // Do App
+      const { data: profilePats } = await supabase
         .from('profiles')
         .select('id, name')
-        .eq('role', 'PATIENT')
-        .order('name');
-      
-      if (profilePatients) {
-        profilePatients.forEach(p => combinedPatients.push({ id: p.id, name: `${p.name} (App)`, source: 'profile' }));
-      }
+        .eq('role', 'PATIENT');
+      if (profilePats) profilePats.forEach(p => combinedPatients.push({id: p.id, name: `${p.name} (App)`, source: 'profile'}));
 
-      // 2b. Admin Records
-      const { data: recordPatients } = await supabase
+      // Da Ficha
+      const { data: recordPats } = await supabase
         .from('patients')
-        .select('id, name')
-        .order('name');
+        .select('id, name');
+      if (recordPats) recordPats.forEach(p => combinedPatients.push({id: p.id, name: `${p.name} (Ficha)`, source: 'record'}));
 
-      if (recordPatients) {
-        recordPatients.forEach(p => combinedPatients.push({ id: p.id, name: `${p.name} (Ficha)`, source: 'record' }));
-      }
-
-      // Remove duplicates based on ID
-      const uniquePatientsMap = new Map();
-      combinedPatients.forEach(p => uniquePatientsMap.set(p.id, p));
-      const uniquePatients = Array.from(uniquePatientsMap.values());
-      uniquePatients.sort((a, b) => a.name.localeCompare(b.name));
-      
-      setPatientOptions(uniquePatients);
-    } catch (err) {
-      console.error("Erro ao carregar filtros:", err);
-    }
+      combinedPatients.sort((a, b) => a.name.localeCompare(b.name));
+      setPatientOptions(combinedPatients);
+    } catch (e) { console.error(e); }
   };
 
   const fetchData = async () => {
@@ -92,317 +73,232 @@ export const PatientAgenda: React.FC = () => {
     try {
       const unifiedList: UnifiedAppointment[] = [];
 
-      // ====================================================
-      // QUERY 1: Agendamentos Diretos (Tabela appointments)
-      // ====================================================
-      // Nota: Usamos sintaxe simplificada de relação para evitar erros de FK explícita
+      // 1. APPOINTMENTS (App Direct)
+      // Usamos sintaxe explicita para FKs para evitar ambiguidade
       let appQuery = supabase.from('appointments').select(`
         id, date, start_time, status, patient_id, professional_id, agenda_type_id,
-        patient:patient_id(name),
-        professional:professional_id(name),
-        agenda_type:agenda_type_id(name, price, color)
+        patient:profiles!patient_id(name),
+        professional:profiles!professional_id(name),
+        agenda_type:agenda_types(name, price, color)
       `);
 
-      // ====================================================
-      // QUERY 2: Reservas de Sala (Tabela room_bookings)
-      // ====================================================
+      // 2. ROOM BOOKINGS (Admin/Prof Reservas)
       let roomQuery = supabase.from('room_bookings').select(`
         id, date, start_time, status, patient_id, professional_id, agenda_type_id,
-        patient:patient_id(name),
-        professional:professional_id(name),
-        agenda_type:agenda_type_id(name, price, color),
-        room:room_id(name)
+        patient:patients(name),
+        professional:profiles(name),
+        agenda_type:agenda_types(name, price, color),
+        room:rooms(name)
       `);
 
-      // --- APLICAR FILTROS ---
-      
+      // Apply Filters
       if (!isAdmin) {
-        // Visão restrita para não-admins
         if (user?.role === UserRole.PROFESSIONAL) {
           appQuery = appQuery.eq('professional_id', user.id);
           roomQuery = roomQuery.eq('professional_id', user.id);
         } else if (user?.role === UserRole.PATIENT) {
           appQuery = appQuery.eq('patient_id', user.id);
-          roomQuery = roomQuery.eq('patient_id', user.id);
+          // Pacientes não veem room_bookings diretos normalmente, mas mantemos a query vazia/segura
+          roomQuery = roomQuery.eq('patient_id', '00000000-0000-0000-0000-000000000000'); 
         }
       } else {
-        // Filtros de Admin
         if (filterProfessional) {
           appQuery = appQuery.eq('professional_id', filterProfessional);
           roomQuery = roomQuery.eq('professional_id', filterProfessional);
         }
-        
         if (filterPatient) {
           appQuery = appQuery.eq('patient_id', filterPatient);
           roomQuery = roomQuery.eq('patient_id', filterPatient);
         }
       }
 
-      // Executar queries em paralelo
       const [appRes, roomRes] = await Promise.all([appQuery, roomQuery]);
 
-      if (appRes.error) console.error("Erro Appointments:", appRes.error);
-      if (roomRes.error) console.error("Erro Rooms:", roomRes.error);
-
-      // Processar dados de Appointments
+      // Process Appointments
       if (appRes.data) {
         appRes.data.forEach((item: any) => {
           unifiedList.push({
             id: item.id,
             date: item.date,
-            start_time: item.start_time?.substring(0, 5) || '00:00',
+            start_time: item.start_time?.substring(0,5) || '00:00',
             status: item.status,
             patient_id: item.patient_id,
             professional_id: item.professional_id,
-            // Fallback seguro para nomes
-            patient_name: item.patient?.name || 'Paciente (App)',
+            patient_name: item.patient?.name || 'Paciente App',
             professional_name: item.professional?.name || 'Profissional',
-            agenda_type: item.agenda_type,
+            agenda_type: Array.isArray(item.agenda_type) ? item.agenda_type[0] : item.agenda_type,
             source: 'appointment'
           });
         });
       }
 
-      // Processar dados de Room Bookings
+      // Process Room Bookings
       if (roomRes.data) {
         roomRes.data.forEach((item: any) => {
           unifiedList.push({
             id: item.id,
             date: item.date,
-            start_time: item.start_time?.substring(0, 5) || '00:00',
-            status: 'scheduled', // Reservas de sala nascem agendadas
+            start_time: item.start_time?.substring(0,5) || '00:00',
+            status: 'scheduled',
             patient_id: item.patient_id,
             professional_id: item.professional_id,
-            patient_name: item.patient?.name || 'Não informado',
+            patient_name: item.patient?.name || '(Sem Paciente)',
             professional_name: item.professional?.name || 'Profissional',
-            agenda_type: item.agenda_type,
-            room_name: item.room?.name,
+            agenda_type: Array.isArray(item.agenda_type) ? item.agenda_type[0] : item.agenda_type,
+            room_name: Array.isArray(item.room) ? item.room[0]?.name : item.room?.name,
             source: 'room_booking'
           });
         });
       }
 
-      // Ordenar: Data (Crescente) -> Hora (Crescente)
+      // Sort
       unifiedList.sort((a, b) => {
-        const dateA = new Date(`${a.date}T${a.start_time}`);
-        const dateB = new Date(`${b.date}T${b.start_time}`);
-        return dateA.getTime() - dateB.getTime();
+        const da = new Date(`${a.date}T${a.start_time}`);
+        const db = new Date(`${b.date}T${b.start_time}`);
+        return da.getTime() - db.getTime();
       });
 
       setAppointments(unifiedList);
     } catch (error) {
-      console.error("Erro fatal ao carregar agenda:", error);
+      console.error("Fetch Error:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const handleCancel = async (item: UnifiedAppointment) => {
-    if (!confirm('Tem certeza que deseja cancelar este agendamento?')) return;
-    
+    if (!confirm('Cancelar este agendamento?')) return;
     try {
+      let error;
       if (item.source === 'room_booking') {
-        // Para reservas de sala, removemos o registro para liberar o horário
-        const { error } = await supabase.from('room_bookings').delete().eq('id', item.id);
-        if (error) throw error;
+        const res = await supabase.from('room_bookings').delete().eq('id', item.id);
+        error = res.error;
       } else {
-        // Para agendamentos, marcamos como cancelado
-        const { error } = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', item.id);
-        if (error) throw error;
+        const res = await supabase.from('appointments').update({status: 'cancelled'}).eq('id', item.id);
+        error = res.error;
       }
       
-      // Recarregar dados após cancelamento
-      fetchData(); 
-    } catch (error) {
-      console.error(error);
-      alert('Erro ao cancelar. Verifique permissões.');
+      if (error) {
+        console.error(error);
+        alert(`Erro: ${error.message || 'Permissão negada.'}`);
+      } else {
+        alert('Cancelado com sucesso!');
+        fetchData();
+      }
+    } catch (e) {
+      alert('Erro inesperado ao cancelar.');
     }
   };
 
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return '';
-    const [year, month, day] = dateStr.split('-');
-    return `${day}/${month}/${year}`;
-  };
-
-  // Helper para calcular fim (Start + 30min)
-  const calculateEndTime = (startTime: string) => {
-    const [h, m] = startTime.split(':').map(Number);
-    const d = new Date();
-    d.setHours(h, m + 30);
-    return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-  };
-
-  // Agrupar por data para exibição
-  const groupedAppointments = appointments.reduce((acc, apt) => {
-    const dateKey = apt.date;
-    if (!acc[dateKey]) acc[dateKey] = [];
-    acc[dateKey].push(apt);
+  const grouped = appointments.reduce((acc, curr) => {
+    if (!acc[curr.date]) acc[curr.date] = [];
+    acc[curr.date].push(curr);
     return acc;
   }, {} as Record<string, UnifiedAppointment[]>);
 
-  const clearFilters = () => {
-    setFilterProfessional('');
-    setFilterPatient('');
+  const formatDate = (s: string) => {
+    if (!s) return '';
+    const [y, m, d] = s.split('-');
+    return `${d}/${m}/${y}`;
   };
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">
-      <header className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+      <header className="flex flex-col md:flex-row justify-between gap-4 items-center">
         <div>
-          <h2 className="text-3xl font-serif text-cinza-dark mb-2">
-            {user?.role === UserRole.PATIENT ? 'Meus Agendamentos' : 'Agenda Completa'}
-          </h2>
-          <p className="text-cinza text-sm">Visualização unificada de reservas e consultas (30 min).</p>
+          <h2 className="text-3xl font-serif text-cinza-dark mb-2">Agenda Completa</h2>
+          <p className="text-cinza text-sm">Visualização unificada (30 min).</p>
         </div>
-        <button onClick={() => fetchData()} className="self-start md:self-auto p-2 text-cinza hover:bg-bege rounded-full transition-colors" title="Atualizar">
-          <RefreshCw size={20} />
-        </button>
+        <button onClick={fetchData} className="p-2 hover:bg-bege rounded-full text-cinza transition-colors"><RefreshCw size={20}/></button>
       </header>
 
-      {/* ADMIN FILTERS */}
       {isAdmin && (
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-sakura/20 flex flex-col md:flex-row gap-4 items-end">
-           <div className="flex items-center gap-2 text-cinza-dark font-medium mr-2 self-start md:self-center">
-             <Filter size={18} /> Filtros:
-           </div>
-           
-           <div className="flex-1 w-full md:w-auto">
-             <label className="block text-xs font-bold text-cinza uppercase mb-1">Profissional</label>
-             <select 
-               value={filterProfessional} 
-               onChange={(e) => setFilterProfessional(e.target.value)}
-               className="w-full p-2 bg-bege/30 rounded-lg border border-bege-dark text-sm outline-none focus:border-sakura"
-             >
-               <option value="">Todos os Profissionais</option>
-               {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-             </select>
-           </div>
-
-           <div className="flex-1 w-full md:w-auto">
-             <label className="block text-xs font-bold text-cinza uppercase mb-1">Paciente</label>
-             <select 
-               value={filterPatient} 
-               onChange={(e) => setFilterPatient(e.target.value)}
-               className="w-full p-2 bg-bege/30 rounded-lg border border-bege-dark text-sm outline-none focus:border-sakura"
-             >
-               <option value="">Todos os Pacientes</option>
-               {patientOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-             </select>
-           </div>
-
-           {(filterProfessional || filterPatient) && (
-              <button 
-                onClick={clearFilters}
-                className="text-xs text-red-400 hover:text-red-600 underline self-center md:self-end pb-2"
-              >
-                Limpar
-              </button>
-           )}
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-sakura/20 flex flex-wrap gap-4 items-end">
+          <div className="flex items-center gap-2 text-cinza font-medium mr-2"><Filter size={18}/> Filtros:</div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="text-xs font-bold text-cinza uppercase">Profissional</label>
+            <select value={filterProfessional} onChange={e => setFilterProfessional(e.target.value)} className="w-full p-2 bg-bege/30 rounded-lg border border-bege-dark text-sm outline-none">
+              <option value="">Todos</option>
+              {professionals.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="text-xs font-bold text-cinza uppercase">Paciente</label>
+            <select value={filterPatient} onChange={e => setFilterPatient(e.target.value)} className="w-full p-2 bg-bege/30 rounded-lg border border-bege-dark text-sm outline-none">
+              <option value="">Todos</option>
+              {patientOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          {(filterProfessional || filterPatient) && <button onClick={() => {setFilterProfessional(''); setFilterPatient('');}} className="text-xs text-red-400 underline pb-2">Limpar</button>}
         </div>
       )}
 
-      {/* AGENDA LIST */}
       {loading ? (
-        <div className="p-12 text-center flex flex-col items-center">
-          <Loader2 className="animate-spin text-sakura mb-2" size={32}/>
-          <span className="text-cinza">Carregando agenda...</span>
-        </div>
-      ) : Object.keys(groupedAppointments).length === 0 ? (
+        <div className="p-12 text-center"><Loader2 className="animate-spin text-sakura mx-auto mb-2" size={32}/><span className="text-cinza">Carregando...</span></div>
+      ) : Object.keys(grouped).length === 0 ? (
         <div className="bg-white p-12 text-center text-cinza border border-dashed border-sakura/30 rounded-2xl">
-          Nenhum agendamento encontrado.
+          <AlertCircle className="mx-auto mb-2 text-sakura" size={32}/>
+          <p>Nenhum agendamento encontrado.</p>
         </div>
       ) : (
         <div className="space-y-8">
-          {Object.keys(groupedAppointments).map(dateKey => (
-            <div key={dateKey} className="bg-white rounded-2xl shadow-sm border border-sakura/20 overflow-hidden">
-               <div className="bg-bege/30 px-6 py-3 border-b border-sakura/10 flex items-center gap-2">
-                 <CalendarIcon size={18} className="text-sakura-dark"/>
-                 <h3 className="font-serif font-bold text-cinza-dark capitalize">
-                    {formatDate(dateKey)} <span className="text-xs font-normal text-cinza ml-2">({new Date(dateKey + 'T12:00:00').toLocaleDateString('pt-BR', {weekday: 'long'})})</span>
-                 </h3>
-               </div>
-               
-               <div className="divide-y divide-bege">
-                 {groupedAppointments[dateKey].map(apt => (
-                   <div key={apt.id} className="p-4 hover:bg-bege/10 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      
-                      {/* Left: Time & Status */}
-                      <div className="flex items-center gap-4 min-w-[160px]">
-                        <div className="flex flex-col items-center bg-white border border-bege-dark rounded-lg p-2 min-w-[80px]">
-                           <span className="text-lg font-serif font-bold text-cinza-dark">{apt.start_time}</span>
-                           <span className="text-xs text-cinza/60 flex items-center gap-1"><Clock size={10}/> +30min</span>
+          {Object.keys(grouped).map(date => (
+            <div key={date} className="bg-white rounded-2xl shadow-sm border border-sakura/20 overflow-hidden">
+              <div className="bg-bege/30 px-6 py-3 border-b border-sakura/10 flex items-center gap-2">
+                <CalendarIcon size={18} className="text-sakura-dark"/>
+                <h3 className="font-serif font-bold text-cinza-dark">{formatDate(date)}</h3>
+              </div>
+              <div className="divide-y divide-bege">
+                {grouped[date].map(apt => (
+                  <div key={apt.id} className="p-4 hover:bg-bege/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 min-w-[160px]">
+                      <div className="flex flex-col items-center bg-white border border-bege-dark rounded-lg p-2 min-w-[80px]">
+                        <span className="text-lg font-serif font-bold text-cinza-dark">{apt.start_time}</span>
+                        <span className="text-[10px] text-cinza flex items-center gap-1"><Clock size={10}/> 30m</span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${apt.status === 'cancelled' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-menta/20 text-menta-dark border-menta/30'}`}>
+                          {apt.status === 'cancelled' ? 'Cancelado' : 'Confirmado'}
+                        </span>
+                        {apt.source === 'room_booking' && <span className="text-[10px] text-cinza bg-bege px-1 rounded border border-bege-dark">Sala Reservada</span>}
+                      </div>
+                    </div>
+
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      <div className="flex items-center gap-2 text-sm text-cinza-dark">
+                        <UserIcon size={16} className="text-sakura-dark shrink-0"/>
+                        <span className="font-bold">{apt.patient_name}</span>
+                      </div>
+                      {apt.room_name && (
+                        <div className="flex items-center gap-2 text-sm text-cinza">
+                          <MapPin size={16} className="text-cinza shrink-0"/>
+                          <span>{apt.room_name}</span>
                         </div>
-                        <div className="flex flex-col items-start gap-1">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium border
-                            ${apt.status === 'scheduled' ? 'bg-menta/20 text-menta-dark border-menta/30' : 
-                              apt.status === 'cancelled' ? 'bg-red-50 text-red-700 border-red-100' : 
-                              'bg-gray-100 text-gray-800 border-gray-200'}
-                          `}>
-                            {apt.status === 'scheduled' ? 'Confirmado' : apt.status === 'cancelled' ? 'Cancelado' : apt.status}
+                      )}
+                      <div className="flex items-center gap-2">
+                        {apt.agenda_type ? (
+                          <span className="px-2 py-0.5 rounded-full text-xs bg-white border border-gray-200" style={{borderColor: apt.agenda_type.color}}>
+                            {apt.agenda_type.name}
                           </span>
-                          {apt.source === 'room_booking' && (
-                             <span className="text-[10px] text-cinza bg-bege px-1 rounded border border-bege-dark whitespace-nowrap">Sala Reservada</span>
-                          )}
+                        ) : <span className="text-xs text-cinza italic">-</span>}
+                      </div>
+                      {isAdmin && (
+                        <div className="lg:col-span-3 text-xs text-cinza mt-1 pt-1 border-t border-bege/50">
+                          Profissional: <span className="font-medium">{apt.professional_name}</span>
                         </div>
-                      </div>
+                      )}
+                    </div>
 
-                      {/* Middle: Details */}
-                      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2">
-                         {/* Paciente */}
-                         <div className="flex items-center gap-2 text-sm text-cinza-dark">
-                           <UserIcon size={16} className="text-sakura-dark shrink-0"/>
-                           <div className="flex flex-col">
-                             <span className="font-bold">{apt.patient_name}</span>
-                             {user?.role === UserRole.PATIENT && <span className="text-xs text-cinza">Profissional: {apt.professional_name}</span>}
-                           </div>
-                         </div>
-                         
-                         {/* Local */}
-                         {apt.room_name && (
-                           <div className="flex items-center gap-2 text-sm text-cinza">
-                             <MapPin size={16} className="text-cinza shrink-0"/>
-                             <span>{apt.room_name}</span>
-                           </div>
-                         )}
-
-                         {/* Serviço */}
-                         <div className="flex items-center gap-2">
-                           {apt.agenda_type ? (
-                             <>
-                               <span className="w-2 h-2 rounded-full shrink-0" style={{backgroundColor: apt.agenda_type.color}}></span>
-                               <span className="text-sm text-cinza truncate">{apt.agenda_type.name}</span>
-                             </>
-                           ) : (
-                             <span className="text-sm text-cinza/50 italic">-</span>
-                           )}
-                         </div>
-
-                         {/* Profissional (Visível para Admin) */}
-                         {isAdmin && (
-                            <div className="flex items-center gap-2 text-sm text-cinza lg:col-span-3 border-t border-bege/50 pt-2 mt-1">
-                               <span className="text-xs font-bold uppercase text-cinza/50">Profissional:</span>
-                               <span className="font-medium text-cinza-dark">{apt.professional_name}</span>
-                            </div>
-                         )}
-                      </div>
-
-                      {/* Right: Actions */}
-                      <div className="flex justify-end items-center">
-                        {apt.status !== 'cancelled' && (isAdmin || user?.id === apt.professional_id) && (
-                          <button 
-                            onClick={() => handleCancel(apt)}
-                            className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors text-xs flex items-center gap-1 border border-transparent hover:border-red-200"
-                            title="Cancelar Agendamento"
-                          >
-                            <XCircle size={18} /> 
-                            <span className="hidden md:inline">Cancelar</span>
-                          </button>
-                        )}
-                      </div>
-                   </div>
-                 ))}
-               </div>
+                    <div className="flex justify-end">
+                      {apt.status !== 'cancelled' && (isAdmin || user?.id === apt.professional_id) && (
+                        <button onClick={() => handleCancel(apt)} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg flex items-center gap-1 transition-colors text-sm">
+                          <XCircle size={18}/> Cancelar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
