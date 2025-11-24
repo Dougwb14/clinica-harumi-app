@@ -26,7 +26,7 @@ export const Reports: React.FC = () => {
       document.body.removeChild(link);
 
     } catch (error) {
-      alert('Erro ao exportar relatório.');
+      alert('Erro ao exportar relatório. Verifique se a tabela existe.');
       console.error(error);
     }
   };

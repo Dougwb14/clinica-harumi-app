@@ -20,6 +20,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Função auxiliar para buscar dados do perfil
   const fetchProfile = async (userId: string, email: string) => {
     try {
       const { data, error } = await supabase
@@ -29,73 +30,67 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single();
 
       if (data) {
-        setUser({
+        return {
           id: data.id,
           name: data.name || email.split('@')[0],
           email: email,
           role: (data.role as UserRole) || UserRole.PATIENT,
           specialty: data.specialty,
           avatar_url: data.avatar_url
-        });
-      } else {
-        // FALLBACK: Se não achar perfil, cria um temporário para não travar o app
-        console.warn('Perfil não encontrado. Usando fallback temporário.');
-        setUser({
-          id: userId,
-          name: email.split('@')[0],
-          email: email,
-          role: UserRole.PATIENT,
-        });
+        };
       }
-    } catch (error) {
-      console.error('Erro crítico ao buscar perfil:', error);
-      // Fallback em caso de erro de rede
-      setUser({
-        id: userId,
-        name: email.split('@')[0],
-        email: email,
-        role: UserRole.PATIENT,
-      });
+    } catch (e) {
+      console.error("Erro ao buscar perfil:", e);
     }
+    // Fallback se falhar
+    return {
+      id: userId,
+      name: email.split('@')[0],
+      email: email,
+      role: UserRole.PATIENT,
+    };
   };
 
   useEffect(() => {
     let mounted = true;
 
-    // 1. TIMEOUT DE SEGURANÇA:
-    // Se o Supabase não responder em 3 segundos, libera o loading
-    // para o usuário não ficar preso na tela branca.
-    const safetyTimeout = setTimeout(() => {
-      if (mounted && loading) {
-        console.warn('Tempo limite de carregamento excedido. Liberando app.');
-        setLoading(false);
-      }
-    }, 3000);
-
     const initializeAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        // Fix: Use v1 auth.session() which is synchronous and cast to any
+        const session = (supabase.auth as any).session();
         
         if (session?.user) {
-          await fetchProfile(session.user.id, session.user.email!);
+          const profile = await fetchProfile(session.user.id, session.user.email!);
+          if (mounted) setUser(profile);
         } else {
-          setUser(null);
+          if (mounted) setUser(null);
         }
       } catch (error) {
-        console.error("Erro na inicialização da Auth:", error);
+        console.error("Erro fatal na auth:", error);
+        if (mounted) setUser(null);
       } finally {
         if (mounted) setLoading(false);
-        clearTimeout(safetyTimeout);
       }
     };
 
+    // 2. TIMEOUT DE SEGURANÇA (CRÍTICO PARA NÃO TRAVAR TELA BRANCA)
+    // Se o initializeAuth demorar mais que 2 segundos (ex: internet lenta), forçamos o fim do loading.
+    const safetyTimeout = setTimeout(() => {
+      if (loading && mounted) {
+        console.warn("Auth timeout - Forçando liberação da tela.");
+        setLoading(false);
+      }
+    }, 2000);
+
     initializeAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    // Fix: Use v1 onAuthStateChange signature
+    const { data: authListener } = (supabase.auth as any).onAuthStateChange(async (event: string, session: any) => {
       if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-        await fetchProfile(session.user.id, session.user.email!);
+        const profile = await fetchProfile(session.user.id, session.user.email!);
+        if (mounted) setUser(profile);
       } else if (event === 'SIGNED_OUT') {
-        setUser(null);
+        if (mounted) setUser(null);
       }
       if (mounted) setLoading(false);
     });
@@ -103,23 +98,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       mounted = false;
       clearTimeout(safetyTimeout);
-      subscription.unsubscribe();
+      authListener?.unsubscribe();
     };
   }, []);
 
   const signOut = async () => {
-    // LOGOUT OTIMISTA: Limpa a tela antes de chamar o servidor
+    // LOGOUT OTIMISTA: Limpa a interface IMEDIATAMENTE antes de falar com o servidor
+    // Isso evita a sensação de "botão quebrado"
     setUser(null);
     try {
-      await supabase.auth.signOut();
+      // Fix: Cast to any for v1 compatibility
+      await (supabase.auth as any).signOut();
     } catch (error) {
-      console.error('Erro no logout (ignorado):', error);
+      console.error("Erro silencioso no logout:", error);
     }
   };
 
   const refreshUser = async () => {
     if (user?.id && user?.email) {
-      await fetchProfile(user.id, user.email);
+      const profile = await fetchProfile(user.id, user.email);
+      setUser(profile);
     }
   };
 

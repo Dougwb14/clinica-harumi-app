@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Calendar, Users, DoorOpen, Settings, LogOut, Flower2, Briefcase, CalendarPlus, DollarSign, FileBarChart, Lock } from 'lucide-react';
+import { LayoutDashboard, Calendar, DoorOpen, Settings, LogOut, Flower2, Briefcase, CalendarPlus, DollarSign, FileBarChart, Lock } from 'lucide-react';
 import { UserRole } from '../types';
 
 interface SidebarProps {
@@ -12,13 +12,14 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, userRole, onLogout }) => {
   const menuItems = [];
 
-  // Common items or Role based items
+  // Itens comuns para Admin e Profissional
   if (userRole === UserRole.ADMIN || userRole === UserRole.PROFESSIONAL) {
     menuItems.push({ id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard });
     menuItems.push({ id: 'schedule', label: 'Agenda', icon: Calendar });
     menuItems.push({ id: 'rooms', label: 'Salas', icon: DoorOpen });
   }
 
+  // Itens Exclusivos de Admin
   if (userRole === UserRole.ADMIN) {
     menuItems.push({ id: 'financial', label: 'Financeiro', icon: DollarSign });
     menuItems.push({ id: 'professionals', label: 'Profissionais', icon: Briefcase });
@@ -27,6 +28,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, use
     menuItems.push({ id: 'settings', label: 'Configurações', icon: Settings });
   }
 
+  // Itens de Paciente
   if (userRole === UserRole.PATIENT) {
     menuItems.push({ id: 'patient_booking', label: 'Agendar Consulta', icon: CalendarPlus });
     menuItems.push({ id: 'schedule', label: 'Meus Agendamentos', icon: Calendar });
@@ -66,7 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, use
 
       <div className="p-4 border-t border-sakura/20">
         <button 
-          type="button"
+          type="button" // Essencial para evitar submit de form
           onClick={(e) => {
             e.preventDefault();
             onLogout();

@@ -27,8 +27,12 @@ export const FinancialManager: React.FC = () => {
         .select('*')
         .order('due_date', { ascending: false });
       
-      if (error) throw error;
-      setTransactions(data as any);
+      if (error) {
+        // Se a tabela não existir ainda, apenas ignora para não quebrar a UI
+        console.warn('Erro ao buscar financeiro (tabela pode não existir):', error);
+      } else {
+        setTransactions(data as any);
+      }
     } catch (error) {
       console.error(error);
     } finally {
@@ -53,7 +57,7 @@ export const FinancialManager: React.FC = () => {
       setFormData({ description: '', amount: '', type: 'EXPENSE', category: '', due_date: new Date().toISOString().split('T')[0] });
       fetchTransactions();
     } catch (error) {
-      alert('Erro ao adicionar transação');
+      alert('Erro ao adicionar transação. Verifique se o banco de dados foi atualizado.');
     }
   };
 
@@ -91,7 +95,6 @@ export const FinancialManager: React.FC = () => {
         </button>
       </header>
 
-      {/* Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-sakura/20 flex items-center gap-4">
           <div className="p-3 bg-menta/20 text-menta-dark rounded-full"><ArrowUpCircle size={24}/></div>
@@ -143,7 +146,6 @@ export const FinancialManager: React.FC = () => {
         </form>
       )}
 
-      {/* List */}
       <div className="bg-white rounded-2xl shadow-sm border border-sakura/20 overflow-hidden">
         {loading ? <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-sakura"/></div> : (
           <table className="w-full text-left">
@@ -158,6 +160,7 @@ export const FinancialManager: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-bege">
+              {transactions.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-cinza">Nenhum registro encontrado.</td></tr>}
               {transactions.map(t => (
                 <tr key={t.id} className="hover:bg-bege/20">
                   <td className="p-4 text-sm text-cinza-dark">{new Date(t.due_date).toLocaleDateString('pt-BR')}</td>

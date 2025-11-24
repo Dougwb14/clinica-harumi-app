@@ -19,11 +19,11 @@ const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState('dashboard');
 
   useEffect(() => {
-    // Redirecionamento inteligente baseado no cargo ao logar
     if (user) {
       if (user.role === UserRole.PATIENT) {
         setCurrentView('patient_booking');
       } else {
+        // Se for admin ou profissional, vai pro dashboard
         setCurrentView('dashboard');
       }
     }
@@ -33,7 +33,7 @@ const AppContent: React.FC = () => {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-bege gap-4">
         <Loader2 className="w-12 h-12 text-sakura animate-spin" />
-        <p className="text-cinza text-sm animate-pulse">Iniciando sistema...</p>
+        <p className="text-cinza text-sm animate-pulse">Carregando sistema...</p>
       </div>
     );
   }

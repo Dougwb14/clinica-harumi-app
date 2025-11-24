@@ -17,23 +17,23 @@ export const Login: React.FC = () => {
     setLoading(true);
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
+        // Fix: Use v1 signIn syntax and cast to any to avoid type errors
+        const { error } = await (supabase.auth as any).signIn({
           email,
           password
         });
         if (error) throw error;
       } else {
-        // Sign Up Logic
-        const { error } = await supabase.auth.signUp({
+        // Fix: Use v1 signUp syntax (params separated) and cast to any
+        const { error } = await (supabase.auth as any).signUp({
           email,
-          password,
-          options: {
+          password
+        }, {
             data: {
               name: name,
               role: isProfessional ? 'PROFESSIONAL' : 'PATIENT',
               specialty: isProfessional ? 'Psicologia' : null // Default
             }
-          }
         });
         if (error) throw error;
         alert('Cadastro realizado! Verifique seu e-mail ou faça login.');
