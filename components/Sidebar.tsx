@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Calendar, Users, DoorOpen, Settings, LogOut, Flower2, Briefcase, CalendarPlus } from 'lucide-react';
+import { LayoutDashboard, Calendar, Users, DoorOpen, Settings, LogOut, Flower2, Briefcase, CalendarPlus, DollarSign, FileBarChart, Lock } from 'lucide-react';
 import { UserRole } from '../types';
 
 interface SidebarProps {
@@ -15,12 +15,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, use
   // Common items or Role based items
   if (userRole === UserRole.ADMIN || userRole === UserRole.PROFESSIONAL) {
     menuItems.push({ id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard });
-    menuItems.push({ id: 'schedule', label: 'Minha Agenda', icon: Calendar });
-    menuItems.push({ id: 'rooms', label: 'Aluguel de Salas', icon: DoorOpen });
+    menuItems.push({ id: 'schedule', label: 'Agenda', icon: Calendar });
+    menuItems.push({ id: 'rooms', label: 'Salas', icon: DoorOpen });
   }
 
   if (userRole === UserRole.ADMIN) {
+    menuItems.push({ id: 'financial', label: 'Financeiro', icon: DollarSign });
     menuItems.push({ id: 'professionals', label: 'Profissionais', icon: Briefcase });
+    menuItems.push({ id: 'blocks', label: 'Bloqueios', icon: Lock });
+    menuItems.push({ id: 'reports', label: 'Relatórios', icon: FileBarChart });
     menuItems.push({ id: 'settings', label: 'Configurações', icon: Settings });
   }
 
@@ -41,7 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, use
         </h1>
       </div>
 
-      <nav className="flex-1 px-4 space-y-2 mt-4">
+      <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto custom-scrollbar">
         {menuItems.map((item) => {
           const isActive = currentView === item.id;
           return (

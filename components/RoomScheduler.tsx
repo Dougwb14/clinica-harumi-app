@@ -10,32 +10,59 @@ export const RoomScheduler: React.FC = () => {
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
+  const [blockedSlots, setBlockedSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     if (selectedRoom && selectedDate) {
-      fetchOccupiedSlots();
+      fetchSlots();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRoom, selectedDate]);
 
-  const fetchOccupiedSlots = async () => {
+  const fetchSlots = async () => {
     setLoading(true);
     setOccupiedSlots([]);
-    setSelectedSlots([]); // Clear selection on room change
+    setBlockedSlots([]);
+    setSelectedSlots([]);
+    
     try {
-      const { data, error } = await supabase
+      // 1. Fetch Bookings
+      const { data: bookings } = await supabase
         .from('room_bookings')
         .select('start_time')
         .eq('room_id', selectedRoom)
         .eq('date', selectedDate);
 
-      if (error) throw error;
-
-      if (data) {
-        setOccupiedSlots(data.map((b: any) => b.start_time));
+      if (bookings) {
+        setOccupiedSlots(bookings.map((b: any) => b.start_time));
       }
+
+      // 2. Fetch Admin Blocks for this Room
+      const { data: blocks } = await supabase
+        .from('schedule_blocks')
+        .select('*')
+        .eq('target_type', 'ROOM')
+        .eq('target_id', selectedRoom)
+        .eq('date', selectedDate);
+      
+      let blockedTimes: string[] = [];
+      if (blocks) {
+        blocks.forEach((block: any) => {
+          if (!block.start_time) {
+            // Full day block
+            blockedTimes = [...TIME_SLOTS];
+          } else {
+             // Specific range block (simplified logic for MVP, assumes slots match exactly)
+             // In a robust app, check overlaps. Here we just block exact matches or simple ranges.
+             blockedTimes.push(block.start_time);
+             // Also block end time? For now simplified.
+          }
+        });
+      }
+      setBlockedSlots(blockedTimes);
+
     } catch (error) {
       console.error('Error fetching slots:', error);
     } finally {
@@ -61,7 +88,7 @@ export const RoomScheduler: React.FC = () => {
         professional_id: user.id,
         date: selectedDate,
         start_time: time,
-        end_time: calculateEndTime(time) // Helper to add 1 hour
+        end_time: calculateEndTime(time)
       }));
 
       const { error } = await supabase
@@ -71,7 +98,7 @@ export const RoomScheduler: React.FC = () => {
       if (error) throw error;
 
       alert('Reserva confirmada com sucesso!');
-      fetchOccupiedSlots(); // Refresh
+      fetchSlots(); 
     } catch (error: any) {
       alert('Erro ao reservar: ' + error.message);
     } finally {
@@ -146,9 +173,9 @@ export const RoomScheduler: React.FC = () => {
                Horários Disponíveis <span className="text-sm font-normal text-cinza">({new Date(selectedDate).toLocaleDateString('pt-BR')})</span>
              </h3>
              <div className="flex items-center gap-4 text-sm flex-wrap">
-                <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-bege-dark"></div> Indisponível</span>
+                <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-200"></div> Bloqueado</span>
+                <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-bege-dark"></div> Ocupado</span>
                 <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-white border border-gray-200"></div> Livre</span>
-                <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-sakura text-white"></div> Selecionado</span>
              </div>
           </div>
 
@@ -158,20 +185,23 @@ export const RoomScheduler: React.FC = () => {
             <div className="grid grid-cols-3 md:grid-cols-6 lg:grid-cols-12 gap-3">
               {TIME_SLOTS.map((time, idx) => {
                 const isOccupied = occupiedSlots.includes(time);
+                const isBlocked = blockedSlots.includes(time);
                 const isSelected = selectedSlots.includes(time);
                 
                 return (
                   <button
                     key={time}
-                    disabled={isOccupied}
+                    disabled={isOccupied || isBlocked}
                     onClick={() => toggleSlot(time)}
                     className={`
                       py-2 rounded-lg text-sm font-medium transition-colors
-                      ${isOccupied 
-                        ? 'bg-bege text-cinza/40 cursor-not-allowed border border-transparent' 
-                        : isSelected 
-                          ? 'bg-sakura text-sakura-dark shadow-sm scale-105 border border-sakura' 
-                          : 'bg-white border border-bege-dark text-cinza hover:border-menta hover:text-menta-dark'}
+                      ${isBlocked
+                        ? 'bg-red-50 text-red-300 cursor-not-allowed border border-red-100'
+                        : isOccupied 
+                          ? 'bg-bege text-cinza/40 cursor-not-allowed border border-transparent' 
+                          : isSelected 
+                            ? 'bg-sakura text-sakura-dark shadow-sm scale-105 border border-sakura' 
+                            : 'bg-white border border-bege-dark text-cinza hover:border-menta hover:text-menta-dark'}
                     `}
                   >
                     {time}

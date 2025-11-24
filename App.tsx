@@ -8,6 +8,9 @@ import { ProfessionalManager } from './components/ProfessionalManager';
 import { PatientBooking } from './components/PatientBooking';
 import { Settings } from './components/Settings';
 import { Login } from './components/Login';
+import { FinancialManager } from './components/FinancialManager'; // New
+import { Reports } from './components/Reports'; // New
+import { ScheduleBlocker } from './components/ScheduleBlocker'; // New
 import { UserRole } from './types';
 import { Loader2 } from 'lucide-react';
 
@@ -48,6 +51,12 @@ const AppContent: React.FC = () => {
         return <PatientAgenda />;
       case 'professionals':
         return <ProfessionalManager />;
+      case 'financial':
+        return <FinancialManager />;
+      case 'reports':
+        return <Reports />;
+      case 'blocks':
+        return <ScheduleBlocker />;
       case 'patient_booking':
         return <PatientBooking />;
       case 'settings':

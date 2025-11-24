@@ -47,3 +47,23 @@ export interface Appointment {
   status: 'scheduled' | 'completed' | 'cancelled';
   notes?: string;
 }
+
+export interface FinancialTransaction {
+  id: string;
+  description: string;
+  amount: number;
+  type: 'INCOME' | 'EXPENSE';
+  category: string;
+  due_date: string;
+  status: 'PENDING' | 'PAID';
+}
+
+export interface ScheduleBlock {
+  id: string;
+  target_type: 'ROOM' | 'PROFESSIONAL';
+  target_id: string; // Room ID or User ID
+  date: string;
+  start_time?: string; // If null, full day
+  end_time?: string;
+  reason: string;
+}
