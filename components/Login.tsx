@@ -15,34 +15,45 @@ export const Login: React.FC = () => {
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    console.log("Tentando autenticar com versão V2..."); // Log para debug
+
     try {
       if (isLogin) {
-        // CORREÇÃO CRÍTICA: Supabase V2 usa signInWithPassword
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password
+        // CORREÇÃO DEFINITIVA: V2 usa signInWithPassword
+        // O erro "signIn is not a function" acontece porque a V2 removeu o método antigo.
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password: password.trim()
         });
-        if (error) throw error;
+        
+        if (error) {
+          console.error("Erro Supabase:", error);
+          throw error;
+        }
+        console.log("Login bem sucedido:", data);
       } else {
-        // CORREÇÃO CRÍTICA: Supabase V2 usa signUp com options
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
+        // CORREÇÃO DEFINITIVA: V2 signUp structure
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password: password.trim(),
           options: {
             data: {
-              name: name,
+              name: name.trim(),
               role: isProfessional ? 'PROFESSIONAL' : 'PATIENT',
               specialty: isProfessional ? 'Psicologia' : null
             }
           }
         });
+
         if (error) throw error;
         alert('Cadastro realizado! Verifique seu e-mail ou faça login.');
         setIsLogin(true);
       }
     } catch (error: any) {
-      console.error(error);
-      alert(error.message || 'Erro ao autenticar');
+      console.error("Erro capturado:", error);
+      let msg = error.message;
+      if (msg === "Invalid login credentials") msg = "E-mail ou senha incorretos.";
+      alert(msg || 'Erro ao autenticar');
     } finally {
       setLoading(false);
     }

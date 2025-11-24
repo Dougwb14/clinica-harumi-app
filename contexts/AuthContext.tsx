@@ -40,9 +40,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
     } catch (e) {
-      console.error("Erro ao buscar perfil:", e);
+      console.warn("Perfil não encontrado, usando fallback:", e);
     }
-    // Fallback se falhar
+    // Fallback: Se não achar perfil no banco, cria objeto temporário para permitir login
     return {
       id: userId,
       name: email.split('@')[0],
@@ -56,7 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const initializeAuth = async () => {
       try {
-        // CORREÇÃO CRÍTICA: Supabase V2 usa getSession() assíncrono
+        // CORREÇÃO: Supabase V2 usa getSession() que é assíncrono
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (session?.user) {
@@ -66,32 +66,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (mounted) setUser(null);
         }
       } catch (error) {
-        console.error("Erro fatal na auth:", error);
-        if (mounted) setUser(null);
+        console.error("Erro na inicialização da auth:", error);
       } finally {
         if (mounted) setLoading(false);
       }
     };
 
-    // TIMEOUT DE SEGURANÇA
+    // TIMEOUT DE SEGURANÇA: Se demorar mais de 2s, força a tela a abrir
+    // Isso evita a "Tela Branca da Morte" se a conexão estiver lenta
     const safetyTimeout = setTimeout(() => {
       if (loading && mounted) {
-        console.warn("Auth timeout - Forçando liberação da tela.");
+        console.warn("Auth demorou. Forçando abertura do app.");
         setLoading(false);
       }
     }, 2000);
 
     initializeAuth();
 
-    // CORREÇÃO CRÍTICA: Listener V2 retorna { data: { subscription } }
+    // CORREÇÃO: Supabase V2 listener retorna { data: { subscription } }
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("Auth event:", event);
       if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
         const profile = await fetchProfile(session.user.id, session.user.email!);
-        if (mounted) setUser(profile);
+        if (mounted) {
+            setUser(profile);
+            setLoading(false);
+        }
       } else if (event === 'SIGNED_OUT') {
-        if (mounted) setUser(null);
+        if (mounted) {
+            setUser(null);
+            setLoading(false);
+        }
       }
-      if (mounted) setLoading(false);
     });
 
     return () => {
@@ -102,12 +108,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signOut = async () => {
-    // LOGOUT OTIMISTA
+    // Logout Otimista: Limpa UI instantaneamente
     setUser(null);
     try {
       await supabase.auth.signOut();
     } catch (error) {
-      console.error("Erro silencioso no logout:", error);
+      console.error("Erro ao deslogar no servidor:", error);
     }
   };
 
