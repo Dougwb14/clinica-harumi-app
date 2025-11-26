@@ -4,21 +4,16 @@ import { useAuth } from '../contexts/AuthContext';
 import { UserRole } from '../types';
 import { Calendar as CalendarIcon, Loader2, XCircle, RefreshCw, User as UserIcon, Filter, MapPin, Clock, AlertCircle } from 'lucide-react';
 
-// Interface Unificada para Exibição
 interface UnifiedAppointment {
   id: string;
   source: 'appointment' | 'room_booking';
   date: string;
   start_time: string;
   status: string;
-  
-  // IDs originais
   patient_id?: string;
   professional_id: string;
   agenda_type_id?: string;
   room_id?: string;
-
-  // Dados Resolvidos (Nomes)
   patient_name: string;
   professional_name: string;
   service_name: string;
@@ -32,11 +27,9 @@ export const PatientAgenda: React.FC = () => {
   const [filteredAppointments, setFilteredAppointments] = useState<UnifiedAppointment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Listas para os Filtros
+  // Filtros
   const [professionalsList, setProfessionalsList] = useState<{id: string, name: string}[]>([]);
   const [patientsList, setPatientsList] = useState<{id: string, name: string}[]>([]);
-
-  // Estados dos Filtros
   const [filterProf, setFilterProf] = useState('');
   const [filterPat, setFilterPat] = useState('');
 
@@ -48,83 +41,64 @@ export const PatientAgenda: React.FC = () => {
     }
   }, [user]);
 
-  // Aplica filtros sempre que os dados ou as seleções mudam
   useEffect(() => {
     let result = appointments;
-
-    if (filterProf) {
-      result = result.filter(item => item.professional_id === filterProf);
-    }
-
-    if (filterPat) {
-      result = result.filter(item => item.patient_id === filterPat);
-    }
-
+    if (filterProf) result = result.filter(item => item.professional_id === filterProf);
+    if (filterPat) result = result.filter(item => item.patient_id === filterPat);
     setFilteredAppointments(result);
   }, [appointments, filterProf, filterPat]);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      // 1. BUSCAR DADOS AUXILIARES (LOOKUPS)
-      // Buscamos todas as tabelas de referência separadamente para garantir que temos os nomes
+      // 1. BUSCAR DADOS DE REFERÊNCIA (LOOKUPS)
       const [profilesRes, patientsRes, roomsRes, typesRes] = await Promise.all([
-        supabase.from('profiles').select('id, name, role'), // Usuários do App e Profissionais
-        supabase.from('patients').select('id, name'),       // Pacientes do Prontuário (Ficha)
-        supabase.from('rooms').select('id, name'),          // Salas
-        supabase.from('agenda_types').select('id, name, color, price') // Tipos de Agenda
+        supabase.from('profiles').select('id, name, role'),
+        supabase.from('patients').select('id, name'),
+        supabase.from('rooms').select('id, name'),
+        supabase.from('agenda_types').select('id, name, color, price')
       ]);
 
-      // Criar Mapas para acesso rápido (ID -> Dados)
-      const profileMap = new Map<string, any>((profilesRes.data || []).map((p: any) => [p.id, p]));
-      const patientMap = new Map<string, any>((patientsRes.data || []).map((p: any) => [p.id, p]));
-      const roomMap = new Map<string, any>((roomsRes.data || []).map((r: any) => [r.id, r]));
-      const typeMap = new Map<string, any>((typesRes.data || []).map((t: any) => [t.id, t]));
+      const profileMap = new Map<string, any>(profilesRes.data?.map((p: any) => [p.id, p]) || []);
+      const patientMap = new Map<string, any>(patientsRes.data?.map((p: any) => [p.id, p]) || []);
+      const roomMap = new Map<string, any>(roomsRes.data?.map((r: any) => [r.id, r]) || []);
+      const typeMap = new Map<string, any>(typesRes.data?.map((t: any) => [t.id, t]) || []);
 
-      // Preencher Dropdowns de Filtro
+      // Preencher Listas de Filtro
       const profs = (profilesRes.data || []).filter((p: any) => p.role === 'PROFESSIONAL' || p.role === 'ADMIN');
       setProfessionalsList(profs.map((p: any) => ({ id: p.id, name: p.name })));
 
       const appPatients = (profilesRes.data || []).filter((p: any) => p.role === 'PATIENT').map((p: any) => ({ id: p.id, name: p.name + ' (App)' }));
       const recordPatients = (patientsRes.data || []).map((p: any) => ({ id: p.id, name: p.name + ' (Ficha)' }));
-      
-      // Remove duplicatas e ordena
-      const allPats = [...appPatients, ...recordPatients].sort((a, b) => a.name.localeCompare(b.name));
-      setPatientsList(allPats);
+      setPatientsList([...appPatients, ...recordPatients].sort((a, b) => a.name.localeCompare(b.name)));
 
-      // 2. BUSCAR AGENDAMENTOS E RESERVAS (DADOS CRUS)
-      // Nota: Não usamos .select('*, patient:...') para evitar falhas de Foreign Key
+      // 2. BUSCAR DADOS DA AGENDA (CRUS)
       let appQuery = supabase.from('appointments').select('*');
       let roomQuery = supabase.from('room_bookings').select('*');
 
-      // Restrição de Segurança para Não-Admins (Caso RLS falhe, filtramos aqui também)
       if (!isAdmin) {
         if (user?.role === UserRole.PROFESSIONAL) {
           appQuery = appQuery.eq('professional_id', user.id);
           roomQuery = roomQuery.eq('professional_id', user.id);
         } else if (user?.role === UserRole.PATIENT) {
           appQuery = appQuery.eq('patient_id', user.id);
-          roomQuery = roomQuery.eq('id', '0'); // Paciente não vê reserva técnica de sala
+          roomQuery = roomQuery.eq('id', '0'); // Paciente não vê reservas técnicas
         }
       }
 
       const [appData, roomData] = await Promise.all([appQuery, roomQuery]);
-
-      const rawAppointments = appData.data || [];
-      const rawRoomBookings = roomData.data || [];
-
       const unifiedList: UnifiedAppointment[] = [];
 
-      // Função Helper para resolver nome do paciente (tenta nas duas tabelas)
+      // Função Helper para Resolver Nomes
       const resolvePatientName = (id?: string) => {
         if (!id) return 'Não informado';
-        if (patientMap.has(id)) return patientMap.get(id).name + ' (Ficha)';
-        if (profileMap.has(id)) return profileMap.get(id).name + ' (App)';
-        return 'Paciente não encontrado';
+        if (patientMap.has(id)) return patientMap.get(id).name;
+        if (profileMap.has(id)) return profileMap.get(id).name;
+        return 'Desconhecido';
       };
 
-      // 3. PROCESSAR AGENDAMENTOS (APPOINTMENTS)
-      rawAppointments.forEach((item: any) => {
+      // 3. MAPEAR AGENDAMENTOS
+      (appData.data || []).forEach((item: any) => {
         const agendaType = item.agenda_type_id ? typeMap.get(item.agenda_type_id) : null;
         const prof = profileMap.get(item.professional_id);
         
@@ -132,14 +106,11 @@ export const PatientAgenda: React.FC = () => {
           id: item.id,
           source: 'appointment',
           date: item.date,
-          // Garante formato HH:MM
           start_time: (item.start_time || '00:00').substring(0, 5),
           status: item.status,
           patient_id: item.patient_id,
           professional_id: item.professional_id,
           agenda_type_id: item.agenda_type_id,
-          
-          // Resolução Manual de Nomes
           patient_name: resolvePatientName(item.patient_id),
           professional_name: prof ? prof.name : 'Profissional Desconhecido',
           service_name: agendaType ? agendaType.name : 'Consulta',
@@ -147,8 +118,8 @@ export const PatientAgenda: React.FC = () => {
         });
       });
 
-      // 4. PROCESSAR RESERVAS DE SALA (ROOM BOOKINGS)
-      rawRoomBookings.forEach((item: any) => {
+      // 4. MAPEAR RESERVAS DE SALA
+      (roomData.data || []).forEach((item: any) => {
         const agendaType = item.agenda_type_id ? typeMap.get(item.agenda_type_id) : null;
         const room = item.room_id ? roomMap.get(item.room_id) : null;
         const prof = profileMap.get(item.professional_id);
@@ -159,12 +130,11 @@ export const PatientAgenda: React.FC = () => {
           source: 'room_booking',
           date: item.date,
           start_time: time,
-          status: 'scheduled', // Reservas de sala são ativas a menos que deletadas
+          status: 'scheduled',
           patient_id: item.patient_id,
           professional_id: item.professional_id,
           agenda_type_id: item.agenda_type_id,
           room_id: item.room_id,
-
           patient_name: item.patient_id ? resolvePatientName(item.patient_id) : '(Reserva de Sala)',
           professional_name: prof ? prof.name : 'Profissional Desconhecido',
           service_name: agendaType ? agendaType.name : 'Aluguel de Sala',
@@ -173,42 +143,35 @@ export const PatientAgenda: React.FC = () => {
         });
       });
 
-      // Ordenação por Data e Hora
       unifiedList.sort((a, b) => {
-        const dateA = new Date(`${a.date}T${a.start_time}`);
-        const dateB = new Date(`${b.date}T${b.start_time}`);
-        return dateA.getTime() - dateB.getTime();
+        const da = new Date(`${a.date}T${a.start_time}`);
+        const db = new Date(`${b.date}T${b.start_time}`);
+        return da.getTime() - db.getTime();
       });
 
       setAppointments(unifiedList);
-
     } catch (err) {
-      console.error("Erro fatal no carregamento:", err);
+      console.error("Erro ao carregar agenda:", err);
     } finally {
       setLoading(false);
     }
   };
 
   const handleCancel = async (item: UnifiedAppointment) => {
-    if (!confirm(`Tem certeza que deseja cancelar: ${item.service_name}?`)) return;
-
+    if (!confirm(`Cancelar ${item.service_name}?`)) return;
     try {
-      let error;
-      if (item.source === 'room_booking') {
-        const res = await supabase.from('room_bookings').delete().eq('id', item.id);
-        error = res.error;
-      } else {
-        const res = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', item.id);
-        error = res.error;
-      }
-
+      const table = item.source === 'room_booking' ? 'room_bookings' : 'appointments';
+      const action = item.source === 'room_booking' ? 
+        supabase.from(table).delete().eq('id', item.id) : 
+        supabase.from(table).update({ status: 'cancelled' }).eq('id', item.id);
+        
+      const { error } = await action;
       if (error) throw error;
-      
-      alert('Cancelado com sucesso!');
-      loadData(); // Recarrega a lista
-    } catch (err: any) {
-      console.error(err);
-      alert('Erro ao cancelar: ' + (err.message || 'Verifique permissões.'));
+      alert('Cancelado!');
+      loadData();
+    } catch (e: any) {
+      console.error(e);
+      alert('Erro ao cancelar: ' + e.message);
     }
   };
 
@@ -218,11 +181,10 @@ export const PatientAgenda: React.FC = () => {
     return `${day}/${month}/${year}`;
   };
 
-  // Agrupamento por data para visualização
   const groupedAppointments = filteredAppointments.reduce((acc, apt) => {
-    const dateKey = apt.date;
-    if (!acc[dateKey]) acc[dateKey] = [];
-    acc[dateKey].push(apt);
+    const key = apt.date;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(apt);
     return acc;
   }, {} as Record<string, UnifiedAppointment[]>);
 
@@ -231,161 +193,68 @@ export const PatientAgenda: React.FC = () => {
       <header className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
           <h2 className="text-3xl font-serif text-cinza-dark mb-2">Agenda Completa</h2>
-          <p className="text-cinza text-sm">Visualização unificada de reservas e consultas (30 min).</p>
+          <p className="text-cinza text-sm">Visualização unificada (30 min).</p>
         </div>
-        <button 
-          onClick={loadData}
-          className="p-2 bg-white hover:bg-bege text-cinza rounded-full shadow-sm border border-bege transition-colors"
-          title="Recarregar Dados"
-        >
-          <RefreshCw size={20} />
-        </button>
+        <button onClick={loadData} className="p-2 bg-white hover:bg-bege text-cinza rounded-full shadow-sm border border-bege"><RefreshCw size={20}/></button>
       </header>
 
       {isAdmin && (
         <div className="bg-white p-4 rounded-xl shadow-sm border border-sakura/20 flex flex-wrap gap-4 items-end">
-           <div className="flex items-center gap-2 text-cinza-dark font-medium mr-2">
-             <Filter size={18} /> Filtros:
-           </div>
-           
+           <div className="flex items-center gap-2 text-cinza-dark font-medium mr-2"><Filter size={18}/> Filtros:</div>
            <div className="flex-1 min-w-[200px]">
-             <label className="block text-xs font-bold text-cinza uppercase mb-1">Profissional</label>
-             <select 
-               value={filterProf}
-               onChange={(e) => setFilterProf(e.target.value)}
-               className="w-full p-2 bg-bege/30 rounded-lg border border-bege-dark text-sm outline-none"
-             >
-               <option value="">Todos os Profissionais</option>
-               {professionalsList.map(p => (
-                 <option key={p.id} value={p.id}>{p.name}</option>
-               ))}
+             <label className="text-xs font-bold text-cinza uppercase">Profissional</label>
+             <select value={filterProf} onChange={e => setFilterProf(e.target.value)} className="w-full p-2 bg-bege/30 rounded-lg border border-bege-dark text-sm">
+               <option value="">Todos</option>
+               {professionalsList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
              </select>
            </div>
-
            <div className="flex-1 min-w-[200px]">
-             <label className="block text-xs font-bold text-cinza uppercase mb-1">Paciente</label>
-             <select 
-               value={filterPat}
-               onChange={(e) => setFilterPat(e.target.value)}
-               className="w-full p-2 bg-bege/30 rounded-lg border border-bege-dark text-sm outline-none"
-             >
-               <option value="">Todos os Pacientes</option>
-               {patientsList.map(p => (
-                 <option key={p.id} value={p.id}>{p.name}</option>
-               ))}
+             <label className="text-xs font-bold text-cinza uppercase">Paciente</label>
+             <select value={filterPat} onChange={e => setFilterPat(e.target.value)} className="w-full p-2 bg-bege/30 rounded-lg border border-bege-dark text-sm">
+               <option value="">Todos</option>
+               {patientsList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
              </select>
            </div>
-
-           {(filterProf || filterPat) && (
-             <button 
-               onClick={() => { setFilterProf(''); setFilterPat(''); }} 
-               className="text-xs text-red-400 underline pb-2 hover:text-red-600"
-             >
-               Limpar
-             </button>
-           )}
+           {(filterProf || filterPat) && <button onClick={() => {setFilterProf(''); setFilterPat('')}} className="text-xs text-red-400 underline">Limpar</button>}
         </div>
       )}
 
       {loading ? (
-        <div className="p-12 text-center">
-          <Loader2 className="animate-spin text-sakura mx-auto mb-2" size={32}/>
-          <span className="text-cinza">Sincronizando agendas...</span>
-        </div>
+        <div className="p-12 text-center"><Loader2 className="animate-spin text-sakura mx-auto" size={32}/><span className="text-cinza">Carregando...</span></div>
       ) : Object.keys(groupedAppointments).length === 0 ? (
-        <div className="bg-white p-12 text-center text-cinza border border-dashed border-sakura/30 rounded-2xl">
-          <AlertCircle className="mx-auto mb-3 text-sakura" size={32}/>
-          <p>Nenhum agendamento encontrado com os filtros atuais.</p>
-        </div>
+        <div className="bg-white p-12 text-center text-cinza border border-dashed border-sakura/30 rounded-2xl">Nenhum agendamento encontrado.</div>
       ) : (
         <div className="space-y-8">
           {Object.keys(groupedAppointments).map(dateKey => (
             <div key={dateKey} className="bg-white rounded-2xl shadow-sm border border-sakura/20 overflow-hidden">
                <div className="bg-bege/30 px-6 py-3 border-b border-sakura/10 flex items-center gap-2">
                  <CalendarIcon size={18} className="text-sakura-dark"/>
-                 <h3 className="font-serif font-bold text-cinza-dark capitalize">
-                    {formatDate(dateKey)} 
-                    <span className="text-xs font-normal text-cinza ml-2 lowercase opacity-70">
-                      ({new Date(dateKey + 'T12:00:00').toLocaleDateString('pt-BR', {weekday: 'long'})})
-                    </span>
-                 </h3>
+                 <h3 className="font-serif font-bold text-cinza-dark capitalize">{formatDate(dateKey)} <span className="text-xs font-normal text-cinza">({new Date(dateKey+'T12:00:00').toLocaleDateString('pt-BR', {weekday: 'long'})})</span></h3>
                </div>
-               
                <div className="divide-y divide-bege">
                  {groupedAppointments[dateKey].map(apt => (
-                   <div key={apt.id} className="p-4 hover:bg-bege/10 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      
-                      {/* 1. Horário */}
+                   <div key={apt.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-bege/10">
                       <div className="flex items-center gap-4 min-w-[150px]">
                         <div className="flex flex-col items-center bg-white border border-bege-dark rounded-lg p-2 min-w-[70px]">
                            <span className="text-lg font-serif font-bold text-cinza-dark leading-none">{apt.start_time}</span>
                            <span className="text-[10px] text-cinza mt-1 flex items-center gap-0.5"><Clock size={8}/> 30m</span>
                         </div>
                         <div className="flex flex-col gap-1">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider w-fit
-                            ${apt.status === 'cancelled' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-menta/20 text-menta-dark border-menta/30'}
-                          `}>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase w-fit ${apt.status === 'cancelled' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-menta/20 text-menta-dark border-menta/30'}`}>
                             {apt.status === 'cancelled' ? 'Cancelado' : 'Confirmado'}
                           </span>
-                          {apt.source === 'room_booking' && (
-                             <span className="text-[9px] text-cinza bg-bege px-1 rounded border border-bege-dark w-fit">SALA RESERVADA</span>
-                          )}
+                          {apt.source === 'room_booking' && <span className="text-[9px] text-cinza bg-bege px-1 rounded border border-bege-dark w-fit">SALA</span>}
                         </div>
                       </div>
-
-                      {/* 2. Detalhes */}
-                      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
-                         <div className="flex items-center gap-2 text-sm text-cinza-dark">
-                           <div className="w-8 h-8 rounded-full bg-sakura/20 flex items-center justify-center text-sakura-dark shrink-0">
-                             <UserIcon size={16}/>
-                           </div>
-                           <div className="flex flex-col leading-tight">
-                             <span className="text-xs text-cinza uppercase font-bold">Paciente</span>
-                             <span className="font-medium truncate" title={apt.patient_name}>{apt.patient_name}</span>
-                           </div>
-                         </div>
-                         
-                         {apt.room_name && (
-                           <div className="flex items-center gap-2 text-sm text-cinza">
-                             <div className="w-8 h-8 rounded-full bg-bege flex items-center justify-center text-cinza shrink-0">
-                               <MapPin size={16}/>
-                             </div>
-                             <div className="flex flex-col leading-tight">
-                               <span className="text-xs text-cinza uppercase font-bold">Local</span>
-                               <span className="font-medium">{apt.room_name}</span>
-                             </div>
-                           </div>
-                         )}
-
-                         <div className="flex items-center gap-2 text-sm text-cinza">
-                           <div className="w-8 h-8 rounded-full bg-white border border-bege-dark flex items-center justify-center shrink-0" style={{borderColor: apt.service_color}}>
-                             <div className="w-3 h-3 rounded-full" style={{backgroundColor: apt.service_color}}></div>
-                           </div>
-                           <div className="flex flex-col leading-tight">
-                             <span className="text-xs text-cinza uppercase font-bold">Serviço</span>
-                             <span className="font-medium">{apt.service_name}</span>
-                           </div>
-                         </div>
-
-                         {isAdmin && (
-                            <div className="flex items-center gap-2 text-sm text-cinza lg:col-span-3 mt-2 pt-2 border-t border-bege/50">
-                               <span className="text-xs font-bold uppercase text-cinza/60">Profissional:</span>
-                               <span className="text-cinza-dark font-medium">{apt.professional_name}</span>
-                            </div>
-                         )}
+                      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                         <div className="flex items-center gap-2 text-sm"><UserIcon size={16} className="text-sakura-dark"/><div className="flex flex-col"><span className="text-xs text-cinza uppercase font-bold">Paciente</span><span className="font-medium">{apt.patient_name}</span></div></div>
+                         {apt.room_name && <div className="flex items-center gap-2 text-sm"><MapPin size={16} className="text-cinza"/><div className="flex flex-col"><span className="text-xs text-cinza uppercase font-bold">Local</span><span className="font-medium">{apt.room_name}</span></div></div>}
+                         <div className="flex items-center gap-2 text-sm"><div className="w-3 h-3 rounded-full" style={{backgroundColor: apt.service_color}}></div><div className="flex flex-col"><span className="text-xs text-cinza uppercase font-bold">Serviço</span><span className="font-medium">{apt.service_name}</span></div></div>
+                         {isAdmin && <div className="col-span-full text-xs text-cinza border-t border-bege pt-2 mt-1">Profissional: <span className="font-bold">{apt.professional_name}</span></div>}
                       </div>
-
-                      {/* 3. Ações */}
                       <div className="flex justify-end">
                         {apt.status !== 'cancelled' && (isAdmin || user?.id === apt.professional_id) && (
-                          <button 
-                            onClick={() => handleCancel(apt)}
-                            className="text-red-400 hover:text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-xs font-medium border border-transparent hover:border-red-100"
-                            title="Cancelar Agendamento"
-                          >
-                            <XCircle size={16} /> 
-                            CANCELAR
-                          </button>
+                          <button onClick={() => handleCancel(apt)} className="text-red-400 hover:text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg flex items-center gap-2 text-xs font-medium"><XCircle size={16}/> CANCELAR</button>
                         )}
                       </div>
                    </div>
